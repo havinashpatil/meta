@@ -18,14 +18,17 @@ class CodeArenaEnv:
         self.step_count = 0
         self.max_steps = 5
 
-    def reset(self) -> CodeArenaObservation:
-        self.current_task = random.choice(self.tasks)
+    def reset(self, task_id: str = None) -> CodeArenaObservation:
+        if task_id:
+            matched = [t for t in self.tasks if t.task_id == task_id]
+            self.current_task = matched[0] if matched else random.choice(self.tasks)
+        else:
+            self.current_task = random.choice(self.tasks)
         self.previous_attempts = []
         self.last_error_log = ""
         self.last_test_results = ""
         self.is_done = False
         self.step_count = 0
-        
         return self.state()
 
     def step(self, action: CodeArenaAction) -> tuple[CodeArenaObservation, float, bool, dict]:
@@ -83,9 +86,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan, title="CodeArena RL Environment")
 
 @app.post("/reset")
-def api_reset():
-    obs = _env.reset()
-    # Returns 200 OK by default in FastAPI
+def api_reset(body: dict = None):
+    task_id = (body or {}).get("task_id")
+    obs = _env.reset(task_id=task_id)
     return {"message": "Environment reset successfully", "observation": obs.model_dump()}
 
 @app.post("/step")

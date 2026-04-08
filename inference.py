@@ -31,7 +31,7 @@ def run_task(task_id: str):
     except Exception as e:
         error_msg = str(e).replace("\n", " ").replace("\r", "")
         print(f"[STEP] step=1 action=reset_failed reward=0.01 done=true error={error_msg}")
-        print(f"[END] success=false steps=1 rewards=0.01")
+        print(f"[END] success=false steps=1 score=0.01 rewards=0.01")
         return
         
     rewards = []
@@ -109,7 +109,8 @@ def run_task(task_id: str):
     success = any(r > 0.5 for r in rewards)
     success_str = "true" if success else "false"
     rewards_str = ",".join([f"{r:.2f}" for r in rewards])
-    print(f"[END] success={success_str} steps={step} rewards={rewards_str}")
+    score = max(0.001, min(0.999, (sum(rewards) / len(rewards)) if rewards else 0.5))
+    print(f"[END] success={success_str} steps={step} score={score:.2f} rewards={rewards_str}")
 
 def main():
     target_task = os.environ.get("CODEARENA_TASK")
