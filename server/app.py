@@ -155,7 +155,7 @@ def api_step(action: CodeArenaAction):
                 "test_results": "",
                 "previous_attempts": [],
             },
-            "reward": 0.0,
+            "reward": 0.1,
             "done": True,
             "info": {},
         }
