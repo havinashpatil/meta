@@ -107,8 +107,8 @@ def run_task(task_id: str, backend: str):
             if error_msg == "null":
                 error_msg = str(e).replace("\n", " ").replace("\r", "")
 
-        # 3e. Clamp it
-        reward = max(0.001, min(0.999, float(raw_reward)))
+        # 3e. Clamp it — bounds chosen so :.2f never rounds to 0.00 or 1.00
+        reward = max(0.01, min(0.99, float(raw_reward)))
         rewards.append(reward)
         
         # 3f. Print [STEP] line immediately
@@ -136,7 +136,7 @@ def run_task(task_id: str, backend: str):
     success = any(r > 0.5 for r in rewards)
     success_str = "true" if success else "false"
     rewards_str = ",".join([f"{r:.2f}" for r in rewards])
-    score = max(0.001, min(0.999, (sum(rewards) / len(rewards)) if rewards else 0.5))
+    score = max(0.01, min(0.99, (sum(rewards) / len(rewards)) if rewards else 0.5))
     print(f"[END] success={success_str} steps={step} score={score:.2f} rewards={rewards_str}")
 
 def main():
