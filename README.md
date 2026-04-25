@@ -1,25 +1,84 @@
 # CodeArena RL Benchmark
 
-CodeArena is an OpenEnv-compatible reinforcement learning benchmark for autonomous code repair. In this environment, an agent receives buggy Python code, proposes fixes, and is iteratively evaluated based on test execution feedback and LLM-based quality metrics.
+GitHub Copilot, Cursor, Devin — every major coding AI is 
+benchmarked on generation. Can it write a function? Can it 
+complete a snippet? Nobody benchmarks what happens when the 
+code breaks and the agent has to reason about failure, iterate 
+on fixes, and recover from mistakes.
+
+CodeArena measures exactly that. It is the first standardized, 
+open-source reinforcement learning environment built specifically 
+for iterative code repair — graded not just on test pass rates 
+but on whether the fix is correct, secure, and written to a 
+professional standard.
 
 ## Features
 
-- **Adaptive Curriculum**: The environment supports an `auto` difficulty mode that dynamically scales task complexity (`easy`, `medium`, `hard`) based on the agent's recent rolling average rewards.
-- **Complex Shaped Rewards**: Rewards are a weighted composite of:
-  - `compile_score` (0.2)
-  - `test_pass_ratio` (0.4)
-  - `efficiency_score` (0.1)
-  - `llm_judge_score` (0.3): Correctness, Security, and Code Quality evaluated via LLM-as-a-judge.
-- **Novelty & Step Penalties**: The agent receives penalties for repeating identical failed fixes or taking too many steps.
+- **Adaptive Curriculum**: The environment supports an `auto` difficulty mode that dynamically scales task complexity based on the agent's recent rolling average rewards.
+- **Complex Shaped Rewards**: Rewards are a weighted composite:
+
+| Component | Weight | What it measures |
+|---|---|---|
+| compile_score | 20% | Code compiles without error |
+| test_pass_ratio | 40% | Fraction of unit tests passed |
+| efficiency_score | 10% | Speed vs optimal runtime |
+| llm_judge_score | 30% | Correctness + Security + Code Quality |
+| step_penalty | -0.02/step | Rewards faster fixes |
+| novelty_penalty | -0.10 | Penalises repeating identical fixes |
+
+All rewards clamped to [0.001, 0.999]
+
 - **Extensive Task Categories**: Includes standard algorithmic tasks, `type_errors`, and `security_bugs`.
-- **Live React Frontend**: Connect a local LLM (like Ollama) or HuggingFace models to interactively visualize step-by-step progress, execution outputs, and live reward components.
+- **Real-time Reward Visualization**: Watch compile score, test ratio, and LLM judge scores update live as the agent works using the React Frontend.
+
+## Adaptive Curriculum
+
+CodeArena tracks the agent's rolling average reward and 
+escalates or de-escalates difficulty automatically. 
+An agent cannot plateau by memorising easy tasks.
+
+| Condition | Transition |
+|---|---|
+| avg reward > 0.80 on easy | → medium |
+| avg reward > 0.75 on medium | → hard |
+| avg reward < 0.35 on hard | → medium |
+| avg reward < 0.35 on medium | → easy |
+
+Minimum 3 episodes at each level before any transition.
+Enable with: POST /reset with `{"task_id": "auto"}`
+Monitor live with: GET /curriculum
 
 ## Architecture
 
-- `server/`: FastAPI backend acting as the OpenEnv entrypoint. Handles state, execution sandbox (`executor.py`), and reward grading (`grader.py`).
+**Data Flow:** Agent → `/reset` → buggy_code → `/step` → subprocess → LLM judge → reward → Agent
+
+- `server/`: FastAPI backend acting as the OpenEnv entrypoint.
 - `frontend/`: React + Vite frontend for live monitoring and manual intervention.
 - `tasks/`: Task definitions stored in OpenEnv-compatible JSON schema.
 - `inference.py`: CLI runner for evaluating RL agents, supporting both OpenAI-compatible APIs and native HuggingFace `transformers` pipelines.
+
+## Results
+
+![Reward Curve](results/reward_curve.png)
+*Episode reward over training steps. Rolling 10-step average shown.*
+
+![Reward by Task](results/reward_by_task.png)
+*Average reward per task category.*
+
+| Model | Easy | Medium | Hard | Avg |
+|---|---|---|---|---|
+| GPT-4o | - | - | - | - |
+| Qwen-72B | - | - | - | - |
+| Llama-3-8B | - | - | - | - |
+
+## Why It Matters
+
+Every production coding AI needs to debug, not just write. 
+There is no other standardized RL environment that trains 
+and benchmarks iterative repair. The hybrid grader — 
+deterministic test execution plus LLM quality judgment — 
+means agents cannot game the reward by memorising solutions 
+or producing syntactically correct but semantically wrong fixes.
 
 ## Setup
 
@@ -30,7 +89,7 @@ CodeArena is an OpenEnv-compatible reinforcement learning benchmark for autonomo
    ```
 
 2. **Generate New Tasks:**
-   To populate the extended task categories (`type_errors` and `security_bugs`), run:
+   To populate the extended task categories (`type_errors` and `security_bugs`), run the task generator. This must be run first or the new task categories won't exist.
    ```bash
    python create_tasks.py
    ```
@@ -78,3 +137,9 @@ This generates `reward_curve.png` and `reward_by_task.png` in the `results/` dir
 ## OpenEnv Compatibility
 
 This benchmark strictly adheres to the OpenEnv specification. See `openenv.yaml` for full configuration details.
+
+## Links
+- HuggingFace Space: [URL]
+- Colab Training Notebook: [URL]
+- HuggingFace Blog Post: [URL]
+- Demo Video: [URL]
