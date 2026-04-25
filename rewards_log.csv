@@ -1,0 +1,2 @@
+timestamp,task_id,step,reward,compile_score,test_ratio,efficiency_score
+2026-04-25T11:18:35.777063,easy-1,5,0.01,0.0,0.0,0.0

@@ -3,3 +3,9 @@ uvicorn[standard]>=0.23.0
 pydantic>=2.0.0
 openai>=1.0.0
 httpx>=0.24.1
+pandas
+matplotlib
+transformers
+torch
+datasets
+trl
