@@ -1,0 +1,8 @@
+{
+  "task_id": "type_errors-3",
+  "difficulty": "type_errors",
+  "description": "Fix the function to format names. It incorrectly calls .upper() on an int ID.",
+  "buggy_code": "def format_records(records):\n    formatted = []\n    for user_id, name in records:\n        formatted.append(f\"{user_id.upper()} - {name.upper()}\")\n    return formatted",
+  "test_code": "\nimport unittest\nclass TestTypeError3(unittest.TestCase):\n    def test_normal(self):\n        self.assertEqual(format_records([(1, 'alice'), (2, 'bob')]), ['1 - ALICE', '2 - BOB'])\n",
+  "optimal_time_seconds": 0.05
+}

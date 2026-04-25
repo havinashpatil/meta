@@ -1,0 +1,8 @@
+{
+  "task_id": "security_bugs-3",
+  "difficulty": "security_bugs",
+  "description": "Fix the ping command to avoid shell injection. Use a list of arguments and shell=False.",
+  "buggy_code": "import subprocess\ndef ping_host(host):\n    return subprocess.check_output(f\"ping -c 1 {host}\", shell=True)",
+  "test_code": "\nimport unittest\nimport inspect\nclass TestSecurity3(unittest.TestCase):\n    def test_security(self):\n        source = inspect.getsource(ping_host)\n        self.assertNotIn(\"shell=True\", source.replace(\" \", \"\"))\n        self.assertIn(\"[\", source)\n",
+  "optimal_time_seconds": 0.05
+}

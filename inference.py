@@ -4,21 +4,27 @@ Rewritten for strict OpenEnv parsing.
 """
 
 import os
+import argparse
 import httpx
+from datetime import datetime
 from openai import OpenAI
 
-def run_task(task_id: str):
+def run_task(task_id: str, backend: str):
     # Retrieve environment variables as instructed
     base_url = os.environ.get("API_BASE_URL")
     api_key = os.environ.get("HF_TOKEN") or os.environ.get("API_KEY")
     model_name = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
     
-    # We pass base_url explicitly. If os.environ["API_BASE_URL"] was strictly intended, 
-    # it is fine since OpenAI client accepts None for default.
-    client = OpenAI(
-        base_url=base_url,
-        api_key=api_key or "NO_KEY_PROVIDED"
-    )
+    hf_pipeline = None
+    client = None
+    if backend == "hf":
+        from transformers import pipeline
+        hf_pipeline = pipeline("text-generation", model=model_name)
+    else:
+        client = OpenAI(
+            base_url=base_url,
+            api_key=api_key or "NO_KEY_PROVIDED"
+        )
     
     # 1. Print the [START] line
     print(f"[START] task={task_id} env=codearena-rl-benchmark model={model_name}")
@@ -58,14 +64,19 @@ def run_task(task_id: str):
         
         # 3b/c. Call the LLM
         try:
-            completion = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            proposed_fix = completion.choices[0].message.content
+            if backend == "hf":
+                prompt = f"{system_prompt}\n\n{user_prompt}"
+                output = hf_pipeline(prompt, max_new_tokens=512, return_full_text=False)
+                proposed_fix = output[0]["generated_text"]
+            else:
+                completion = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                proposed_fix = completion.choices[0].message.content
         except Exception as e:
             error_msg = str(e).replace("\n", " ").replace("\r", "")
             # If the LLM call fails, use this fallback fix
@@ -106,6 +117,22 @@ def run_task(task_id: str):
         print(f"[STEP] step={step} action={action_summary} reward={reward:.2f} done={done_str} error={error_msg}")
         
     # 4. Print [END]
+    timestamp = datetime.now().isoformat()
+    compile_score, test_ratio, efficiency_score = 0.0, 0.0, 0.0
+    if "info" in obs_json and "reward_components" in obs_json["info"]:
+        rc = obs_json["info"]["reward_components"]
+        compile_score = rc.get("compile_score", 0.0)
+        test_ratio = rc.get("test_ratio", 0.0)
+        efficiency_score = rc.get("efficiency", 0.0)
+        
+    final_reward = rewards[-1] if rewards else 0.0
+    csv_path = "rewards_log.csv"
+    write_headers = not os.path.exists(csv_path)
+    with open(csv_path, "a", encoding="utf-8") as f:
+        if write_headers:
+            f.write("timestamp,task_id,step,reward,compile_score,test_ratio,efficiency_score\n")
+        f.write(f"{timestamp},{task_id},{step},{final_reward},{compile_score},{test_ratio},{efficiency_score}\n")
+
     success = any(r > 0.5 for r in rewards)
     success_str = "true" if success else "false"
     rewards_str = ",".join([f"{r:.2f}" for r in rewards])
@@ -113,12 +140,16 @@ def run_task(task_id: str):
     print(f"[END] success={success_str} steps={step} score={score:.2f} rewards={rewards_str}")
 
 def main():
+    parser = argparse.ArgumentParser(description="CodeArena RL Inference")
+    parser.add_argument("--backend", type=str, choices=["openai", "hf"], default="openai", help="Backend to use for LLM generation.")
+    args = parser.parse_args()
+
     target_task = os.environ.get("CODEARENA_TASK")
     if target_task:
-        run_task(target_task)
+        run_task(target_task, args.backend)
     else:
         for t in ["easy", "medium", "hard"]:
-            run_task(t)
+            run_task(t, args.backend)
 
 if __name__ == "__main__":
     main()

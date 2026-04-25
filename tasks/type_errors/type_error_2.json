@@ -1,0 +1,8 @@
+{
+  "task_id": "type_errors-2",
+  "difficulty": "type_errors",
+  "description": "Fix the function to count frequencies. It incorrectly calls .append() on a dict.",
+  "buggy_code": "def count_frequencies(words):\n    counts = {}\n    for word in words:\n        if word not in counts:\n            counts.append({word: 1})\n        else:\n            counts[word] += 1\n    return counts",
+  "test_code": "\nimport unittest\nclass TestTypeError2(unittest.TestCase):\n    def test_normal(self):\n        self.assertEqual(count_frequencies(['apple', 'banana', 'apple']), {'apple': 2, 'banana': 1})\n    def test_empty(self):\n        self.assertEqual(count_frequencies([]), {})\n",
+  "optimal_time_seconds": 0.05
+}

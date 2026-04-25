@@ -42,8 +42,21 @@ class CodeArenaEnv:
         self.is_done = False
         self.step_count = 0
         self.max_steps = 5
+        self.episode_rewards_history: list[float] = []
 
     def reset(self, task_id: str = "easy") -> CodeArenaObservation:
+        if task_id == "auto":
+            if not self.episode_rewards_history:
+                task_id = "easy"
+            else:
+                avg_reward = sum(self.episode_rewards_history) / len(self.episode_rewards_history)
+                if avg_reward < 0.4:
+                    task_id = "easy"
+                elif avg_reward <= 0.75:
+                    task_id = "medium"
+                else:
+                    task_id = "hard"
+        
         # Priority: exact task_id match → difficulty match → random
         if task_id in TASK_ID_MAP:
             self.current_task = TASK_ID_MAP[task_id]
@@ -71,7 +84,13 @@ class CodeArenaEnv:
             timeout=max(self.current_task.optimal_time_seconds * 10, 2.0),
         )
 
-        reward = calculate_reward(exec_result, self.current_task)
+        base_reward, reward_components = calculate_reward(exec_result, self.current_task, action.proposed_fix)
+
+        step_penalty = 0.02 * self.step_count
+        novelty_penalty = 0.1 if action.proposed_fix in self.previous_attempts else 0.0
+
+        final_reward = base_reward - step_penalty - novelty_penalty
+        final_reward = max(0.001, min(0.999, float(final_reward)))
 
         self.previous_attempts.append(action.proposed_fix)
         self.last_error_log = exec_result.runtime_errors
@@ -79,14 +98,18 @@ class CodeArenaEnv:
             f"{exec_result.test_passed}/{exec_result.test_total} tests passed."
         )
 
-        if reward > 0.99 or self.step_count >= self.max_steps:
+        if final_reward > 0.99 or self.step_count >= self.max_steps:
             self.is_done = True
+            self.episode_rewards_history.append(final_reward)
+            if len(self.episode_rewards_history) > 5:
+                self.episode_rewards_history.pop(0)
 
         info = {
             "execution_metadata": exec_result.model_dump(),
             "task_id": self.current_task.task_id,
+            "reward_components": reward_components
         }
-        return self._state(), reward, self.is_done, info
+        return self._state(), final_reward, self.is_done, info
 
     def _state(self) -> CodeArenaObservation:
         if not self.current_task:
@@ -129,6 +152,10 @@ def api_reset(body: ResetRequest = ResetRequest()):
             "status": "success",
             "message": "Environment reset successfully",
             "observation": obs.model_dump(),
+            "info": {
+                "task_id": _env.current_task.task_id if _env.current_task else "",
+                "difficulty": _env.current_task.difficulty if _env.current_task else ""
+            }
         }
     except Exception:
         traceback.print_exc()

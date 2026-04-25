@@ -1,0 +1,8 @@
+{
+  "task_id": "security_bugs-2",
+  "difficulty": "security_bugs",
+  "description": "Remove the hardcoded secret token and load it from the os.environ dictionary as 'API_TOKEN'.",
+  "buggy_code": "import os\ndef get_api_token():\n    token = \"secret_12345\"\n    return token",
+  "test_code": "\nimport unittest\nimport inspect\nimport os\nclass TestSecurity2(unittest.TestCase):\n    def test_normal(self):\n        os.environ['API_TOKEN'] = 'my_secure_token'\n        self.assertEqual(get_api_token(), 'my_secure_token')\n    def test_security(self):\n        source = inspect.getsource(get_api_token)\n        self.assertNotIn(\"secret_12345\", source)\n",
+  "optimal_time_seconds": 0.05
+}

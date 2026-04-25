@@ -1,86 +1,80 @@
----
-title: CodeArena RL Agent
-emoji: 🤖
-colorFrom: blue
-colorTo: purple
-sdk: docker
-pinned: false
----
+# CodeArena RL Benchmark
 
-# CodeArena: RL Benchmark for Autonomous Code Repair
+CodeArena is an OpenEnv-compatible reinforcement learning benchmark for autonomous code repair. In this environment, an agent receives buggy Python code, proposes fixes, and is iteratively evaluated based on test execution feedback and LLM-based quality metrics.
 
-CodeArena is an OpenEnv-compatible reinforcement learning benchmark for testing the capability of autonomous agents to debug, fix, and optimize broken code.
+## Features
 
-## Environment Description
+- **Adaptive Curriculum**: The environment supports an `auto` difficulty mode that dynamically scales task complexity (`easy`, `medium`, `hard`) based on the agent's recent rolling average rewards.
+- **Complex Shaped Rewards**: Rewards are a weighted composite of:
+  - `compile_score` (0.2)
+  - `test_pass_ratio` (0.4)
+  - `efficiency_score` (0.1)
+  - `llm_judge_score` (0.3): Correctness, Security, and Code Quality evaluated via LLM-as-a-judge.
+- **Novelty & Step Penalties**: The agent receives penalties for repeating identical failed fixes or taking too many steps.
+- **Extensive Task Categories**: Includes standard algorithmic tasks, `type_errors`, and `security_bugs`.
+- **Live React Frontend**: Connect a local LLM (like Ollama) or HuggingFace models to interactively visualize step-by-step progress, execution outputs, and live reward components.
 
-The environment tests the agent on 3 difficulties of tasks:
-1. **Easy**: Correcting syntax errors.
-2. **Medium**: Fixing logical bugs.
-3. **Hard**: Algorithm and efficiency optimization.
+## Architecture
 
-The agent interacts with the environment by receiving observations of the buggy code and submitting proposed fixes. Execution runs in a sandboxed subprocess.
+- `server/`: FastAPI backend acting as the OpenEnv entrypoint. Handles state, execution sandbox (`executor.py`), and reward grading (`grader.py`).
+- `frontend/`: React + Vite frontend for live monitoring and manual intervention.
+- `tasks/`: Task definitions stored in OpenEnv-compatible JSON schema.
+- `inference.py`: CLI runner for evaluating RL agents, supporting both OpenAI-compatible APIs and native HuggingFace `transformers` pipelines.
 
-### Observation Format
-`buggy_code` (string): The current state of the source code.
-`error_log` (string): Standard error output or runtime exceptions from previous attempts.
-`test_results` (string): Count of passed vs total unit tests.
-`previous_attempts` (list of strings): Complete history of fixes proposed during the episode.
+## Setup
 
-### Action Format
-`proposed_fix` (string): The complete raw Python code to overwrite the buggy file.
+1. **Install Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   cd frontend && npm install
+   ```
 
-### Reward Function
-The reward dynamically evaluates partial success bounded universally between 0.0 and 1.0:
-- `0.3 * compile_score`: Full points if code compiles successfully.
-- `0.4 * test_pass_ratio`: Proportional points based on the number of passed unit tests.
-- `0.3 * efficiency_score`: Proportional points based on the execution speed relative to an established optimal algorithmic runtime. (Efficiency is only considered if all tests pass).
+2. **Generate New Tasks:**
+   To populate the extended task categories (`type_errors` and `security_bugs`), run:
+   ```bash
+   python create_tasks.py
+   ```
 
-## API Endpoints
+## Usage
 
-| Method | Path     | Description                          |
-|--------|----------|--------------------------------------|
-| POST   | `/reset` | Reset env. Body: `{"task_id":"easy"}`|
-| POST   | `/step`  | Submit fix. Body: `{"proposed_fix":"..."}` |
-| GET    | `/state` | Get current observation              |
-| GET    | `/`      | Health check                         |
-
-## Setup Instructions
-
-### Local Setup
+### 1. Run the Backend Server
+The server is required for both the frontend dashboard and RL training.
 ```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn server.app:app --reload --port 7860
+uvicorn server.app:app --port 7860
 ```
 
-### Docker Build & Run
+### 2. Run the Frontend Dashboard
 ```bash
-docker build -t codearena .
-docker run -p 7860:7860 codearena
+cd frontend
+npm run dev
 ```
+Navigate to `http://localhost:3000` to access the live RL monitoring dashboard.
 
-### Test the /reset endpoint
+### 3. Run Inference Evaluation
+You can evaluate a local agent or pipeline programmatically via `inference.py`.
+
+**Using OpenAI-Compatible Endpoints (e.g., Ollama or vLLM):**
 ```bash
-curl -X POST http://localhost:7860/reset \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "easy"}'
+export API_BASE_URL="http://localhost:11434/v1"
+export MODEL_NAME="codellama"
+python inference.py --backend openai
 ```
 
-## Example Inference Run
-
-To test the environment with OpenAI's API:
+**Using HuggingFace Transformers (Local pipeline):**
 ```bash
-export OPENAI_API_KEY="sk-..."
-python inference.py
+export MODEL_NAME="Qwen/Qwen2.5-Coder-1.5B"
+python inference.py --backend hf
 ```
 
-The script will produce structured logging:
+## Reward Analysis
+
+As your agent interacts with the environment, inference logs are automatically written to `rewards_log.csv`.
+To visualize the reward curves over training steps and average rewards by task category, run:
+```bash
+python plot_rewards.py
 ```
-[START] Initializing CodeArena inference logging
-[STEP] Beginning Step 1
-[STEP] Action taken. Reward received: 0.700. Task ID: easy-1
-[STEP] Beginning Step 2
-[STEP] Action taken. Reward received: 1.000. Task ID: easy-1
-[END] Inference Complete. Executed 2 step(s).
-```
+This generates `reward_curve.png` and `reward_by_task.png` in the `results/` directory.
+
+## OpenEnv Compatibility
+
+This benchmark strictly adheres to the OpenEnv specification. See `openenv.yaml` for full configuration details.

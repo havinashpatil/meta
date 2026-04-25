@@ -1,7 +1,7 @@
 name: codearena-rl-benchmark
 description: "RL Benchmark for Autonomous Code Repair — iterative debugging with execution feedback"
 version: "1.0.0"
-entrypoint: server.env:CodeArenaEnv
+entrypoint: server.app:CodeArenaEnv
 
 runtime:
   language: python
@@ -12,6 +12,19 @@ api:
   step: /step
   state: /state
 
+observation_space:
+  type: json
+  schema:
+    buggy_code: string
+    error_log: string
+    test_results: string
+    previous_attempts: list[string]
+
+action_space:
+  type: json
+  schema:
+    proposed_fix: string
+
 tasks:
   - id: easy
     path: tasks/easy.json
@@ -21,6 +34,12 @@ tasks:
     grader: server.grader:grade
   - id: hard
     path: tasks/hard.json
+    grader: server.grader:grade
+  - id: type_errors
+    path: tasks/type_errors/type_error_1.json
+    grader: server.grader:grade
+  - id: security_bugs
+    path: tasks/security_bugs/security_bug_1.json
     grader: server.grader:grade
 
 limits:

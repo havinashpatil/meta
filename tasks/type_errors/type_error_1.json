@@ -1,0 +1,8 @@
+{
+  "task_id": "type_errors-1",
+  "difficulty": "type_errors",
+  "description": "Fix the function to sum a list of numbers that might be passed as strings. It currently tries to add int and str.",
+  "buggy_code": "def sum_all(items):\n    total = 0\n    for item in items:\n        total = total + item\n    return total",
+  "test_code": "\nimport unittest\nclass TestTypeError1(unittest.TestCase):\n    def test_normal(self):\n        self.assertEqual(sum_all([1, 2, 3]), 6)\n    def test_strings(self):\n        self.assertEqual(sum_all(['1', '2', '3']), 6)\n    def test_mixed(self):\n        self.assertEqual(sum_all([1, '2', 3]), 6)\n",
+  "optimal_time_seconds": 0.05
+}

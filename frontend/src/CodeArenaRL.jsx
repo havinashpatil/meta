@@ -1,5 +1,5 @@
-
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 
 /* ─────────────────────────────────────────────
    GOOGLE FONTS
@@ -129,6 +129,12 @@ const GlobalStyles = () => (
    TASKS (mirrors server tasks — display only)
 ───────────────────────────────────────────── */
 const TASKS = {
+  "auto": {
+    id: "auto", label: "Auto", name: "Adaptive Curriculum", difficulty: "info",
+    description: "Automatically selects difficulty based on recent performance history.",
+    hints: ["If avg < 0.4 -> Easy", "If avg < 0.75 -> Medium", "Else -> Hard"],
+    buggy_code: "# Click Start Episode to fetch task",
+  },
   "easy-1": {
     id: "easy-1", label: "Easy", name: "Fix average_list()", difficulty: "easy",
     description: "Fix syntax errors: missing colon after def and uses length() instead of len().",
@@ -176,37 +182,26 @@ function AnsiLine({ text }) {
 }
 
 /* ─────────────────────────────────────────────
-   REWARD CHART
+   REWARD CHART (Recharts)
 ───────────────────────────────────────────── */
 function RewardChart({ rewards }) {
-  const W = 260, H = 100, PAD = 20;
-  const pts = rewards.map((r, i) => ({
-    x: PAD + (i / Math.max(4, 1)) * (W - PAD * 2),
-    y: PAD + (1 - r) * (H - PAD * 2),
-    r,
-  }));
-  const pathD = pts.length > 1 ? pts.reduce((a, p, i) => i === 0 ? `M${p.x},${p.y}` : a + ` L${p.x},${p.y}`, "") : "";
-  const areaD = pts.length > 1 ? `${pathD} L${pts[pts.length - 1].x},${H - PAD} L${pts[0].x},${H - PAD} Z` : "";
+  const data = rewards.map((r, i) => ({ step: i + 1, reward: r }));
+  for (let i = data.length + 1; i <= 5; i++) {
+    data.push({ step: i, reward: null });
+  }
   return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`}>
-      <defs>
-        <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#00ff88" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="#00ff88" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {[0, 0.5, 1].map(v => {
-        const y = PAD + (1 - v) * (H - PAD * 2);
-        return <line key={v} x1={PAD} y1={y} x2={W - PAD} y2={y} stroke="#1e293b" strokeWidth="1" strokeDasharray="3,3" />;
-      })}
-      {[1, 2, 3, 4, 5].map(s => (
-        <text key={s} x={PAD + ((s - 1) / 4) * (W - PAD * 2)} y={H - 4}
-          fill="#334155" fontSize="8" textAnchor="middle" fontFamily="JetBrains Mono">{s}</text>
-      ))}
-      {areaD && <path d={areaD} fill="url(#rg)" />}
-      {pathD && <path d={pathD} fill="none" stroke="#00ff88" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
-      {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="4" fill="#0a0e1a" stroke={rewardColor(p.r)} strokeWidth="2" />)}
-    </svg>
+    <div style={{ width: "100%", height: 120 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <XAxis dataKey="step" stroke="#334155" tick={{ fill: "#334155", fontSize: 10, fontFamily: "'JetBrains Mono',monospace" }} />
+          <YAxis domain={[0, 1]} ticks={[0, 0.5, 1]} stroke="#334155" tick={{ fill: "#334155", fontSize: 10, fontFamily: "'JetBrains Mono',monospace" }} />
+          <ReferenceLine y={0.5} stroke="#334155" strokeDasharray="3 3" />
+          <ReferenceLine y={1.0} stroke="#334155" strokeDasharray="3 3" />
+          <Tooltip contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b", borderRadius: 4, fontFamily: "'JetBrains Mono',monospace", fontSize: 10 }} itemStyle={{ color: "#00ff88" }} />
+          <Line type="monotone" dataKey="reward" stroke="#00ff88" strokeWidth={2} dot={{ fill: "#0a0e1a", stroke: "#00ff88", strokeWidth: 2, r: 4 }} isAnimationActive={true} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -226,6 +221,9 @@ export default function CodeArenaRL() {
 
   /* ── Task & episode state ── */
   const [selectedTask, setSelectedTask] = useState("easy-1");
+  const [currentEnvTask, setCurrentEnvTask] = useState("");
+  const [currentEnvDifficulty, setCurrentEnvDifficulty] = useState("");
+  const [currentRewardComponents, setCurrentRewardComponents] = useState({ compile_score: 0, test_ratio: 0, efficiency_score: 0 });
   const [envState, setEnvState] = useState(null);   // observation from server
   const [uiMode, setUiMode] = useState("idle");      // idle|resetting|agent_thinking|executing|done
   const [episodeLog, setEpisodeLog] = useState([]);
@@ -305,7 +303,7 @@ export default function CodeArenaRL() {
     });
     if (!res.ok) throw new Error(`/reset failed: ${res.status}`);
     const data = await res.json();
-    return data.observation; // { buggy_code, error_log, test_results, previous_attempts }
+    return data; // { observation, info }
   }, [envUrl]);
 
   const envStep = useCallback(async (proposedFix) => {
@@ -463,6 +461,9 @@ export default function CodeArenaRL() {
     setManualCode(""); setTokenEst(0);
     setCollapsedEntries(new Set());
     setErrorBanner("");
+    setCurrentEnvTask("");
+    setCurrentEnvDifficulty("");
+    setCurrentRewardComponents({ compile_score: 0, test_ratio: 0, efficiency_score: 0 });
   }, []);
 
   /* ──────────────────────────────────────────
@@ -512,6 +513,7 @@ export default function CodeArenaRL() {
 
     const { observation: newObs, reward, done } = stepResult;
     const meta = stepResult.info?.execution_metadata || {};
+    const rc = stepResult.info?.reward_components || {};
     const passed = meta.test_passed ?? 0;
     const total = meta.test_total ?? task.hints.length + 1;
     const newStep = currentStepCount + 1;
@@ -526,11 +528,19 @@ export default function CodeArenaRL() {
     setStepCount(newStep);
     setRewards(prev => [...prev, reward]);
     setIsDone(done);
+    setCurrentRewardComponents({
+      compile_score: rc.compile_score || 0,
+      test_ratio: rc.test_ratio || 0,
+      efficiency_score: rc.efficiency || 0,
+    });
 
     const logEntry = {
       step: newStep,
       code_submitted: fixedCode,
       reward, done, passed, total,
+      compile_score: rc.compile_score || 0,
+      test_ratio: rc.test_ratio || 0,
+      efficiency_score: rc.efficiency || 0,
       error_log: newObs?.error_log || "",
       test_results: newObs?.test_results || "",
       timestamp: new Date().toISOString(),
@@ -570,9 +580,9 @@ export default function CodeArenaRL() {
     runningRef.current = true;
     setUiMode("resetting");
 
-    let initialObs;
+    let initialResp;
     try {
-      initialObs = await envReset(selectedTask);
+      initialResp = await envReset(selectedTask);
     } catch (err) {
       setErrorBanner(`🌐 OpenEnv /reset Error: ${err.message}`);
       setUiMode("idle");
@@ -580,6 +590,9 @@ export default function CodeArenaRL() {
       return;
     }
 
+    const initialObs = initialResp.observation;
+    setCurrentEnvTask(initialResp.info?.task_id || selectedTask);
+    setCurrentEnvDifficulty(initialResp.info?.difficulty || "");
     setEnvState(initialObs);
     setTimeout(() => runStep(initialObs, 0), 400);
   }, [ollamaStatus, envStatus, manualMode, resetEpisode, envReset, selectedTask, runStep]);
@@ -865,7 +878,14 @@ export default function CodeArenaRL() {
             <div className="panel">
               <div className="panel-header">
                 <span style={{ color: "#ff4455" }}>⚠</span>&nbsp;Buggy Code
-                <span style={{ marginLeft: "auto" }}><span className={`badge badge-${task.difficulty}`}>{task.id}</span></span>
+                <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                  {currentEnvDifficulty && (
+                    <span className={`badge badge-${currentEnvDifficulty.toLowerCase()}`}>
+                      {currentEnvDifficulty}
+                    </span>
+                  )}
+                  <span className={`badge badge-${task.difficulty}`}>{currentEnvTask || task.id}</span>
+                </span>
               </div>
               <div style={{ padding: 14 }}>
                 <pre className="code-block" style={{ color: "#f8c8c8", maxHeight: 170, overflowY: "auto" }}>
@@ -1005,6 +1025,30 @@ export default function CodeArenaRL() {
                     <span style={{ color: "#64748b" }}>prev_attempts: </span>
                     <span style={{ color: "#ffaa00" }}>{(envState.previous_attempts || []).length}</span>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Live Reward Components */}
+            {stepCount > 0 && (
+              <div className="panel fade-in">
+                <div className="panel-header">🏅 &nbsp;Reward Components</div>
+                <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+                  {[
+                    { label: "Compile Score", val: currentRewardComponents.compile_score },
+                    { label: "Test Pass Ratio", val: currentRewardComponents.test_ratio },
+                    { label: "Efficiency", val: currentRewardComponents.efficiency_score },
+                  ].map(c => (
+                    <div key={c.label}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "#64748b", marginBottom: 4 }}>
+                        <span>{c.label}</span>
+                        <span style={{ color: rewardColor(c.val) }}>{c.val.toFixed(2)}</span>
+                      </div>
+                      <div className="reward-bar-outer" style={{ marginTop: 0, height: 4 }}>
+                        <div className="reward-bar-inner" style={{ width: `${c.val * 100}%`, background: `linear-gradient(90deg, ${rewardColor(0)}, ${rewardColor(c.val)})` }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

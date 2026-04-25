@@ -1,0 +1,8 @@
+{
+  "task_id": "security_bugs-1",
+  "difficulty": "security_bugs",
+  "description": "Fix the function to parse JSON safely without using eval().",
+  "buggy_code": "import json\ndef parse_user_data(data_string):\n    return eval(data_string)",
+  "test_code": "\nimport unittest\nimport inspect\nclass TestSecurity1(unittest.TestCase):\n    def test_normal(self):\n        self.assertEqual(parse_user_data('{\"name\": \"alice\"}'), {\"name\": \"alice\"})\n    def test_security(self):\n        source = inspect.getsource(parse_user_data)\n        self.assertNotIn(\"eval(\", source)\n",
+  "optimal_time_seconds": 0.05
+}
