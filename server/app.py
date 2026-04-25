@@ -1,225 +1,209 @@
-"""
-CodeArena RL Environment — Production FastAPI entrypoint.
-This is the primary server that Hugging Face Spaces / OpenEnv evaluator hits.
-All endpoints are wrapped with fallback safety so they NEVER return non-200.
-"""
-
-import random
-import traceback
-from typing import Optional
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
-from server.models import CodeArenaObservation, CodeArenaAction, TaskInfo
-from server.executor import run_code_with_tests
-from server.grader import calculate_reward, safe_reward, force_valid_reward
-from tasks import ALL_TASKS
-
-
-# ── Lookup map: difficulty string → list of tasks ──────────────────────────
-TASK_MAP: dict[str, list[TaskInfo]] = {}
-for _t in ALL_TASKS:
-    TASK_MAP.setdefault(_t.difficulty, []).append(_t)
-# Also allow lookup by exact task_id  (e.g. "easy-1")
-TASK_ID_MAP: dict[str, TaskInfo] = {_t.task_id: _t for _t in ALL_TASKS}
-
-
-# ── Request schema ─────────────────────────────────────────────────────────
-class ResetRequest(BaseModel):
-    task_id: Optional[str] = "easy"
-
-
-# ── Environment state ─────────────────────────────────────────────────────
-class CodeArenaEnv:
-    def __init__(self):
-        self.tasks = ALL_TASKS
-        self.current_task: TaskInfo | None = None
-        self.previous_attempts: list[str] = []
-        self.last_error_log = ""
-        self.last_test_results = ""
-        self.is_done = False
-        self.step_count = 0
-        self.max_steps = 5
-        self.episode_rewards_history: list[float] = []
-
-    def reset(self, task_id: str = "easy") -> CodeArenaObservation:
-        if task_id == "auto":
-            if not self.episode_rewards_history:
-                task_id = "easy"
-            else:
-                avg_reward = sum(self.episode_rewards_history) / len(self.episode_rewards_history)
-                if avg_reward < 0.4:
-                    task_id = "easy"
-                elif avg_reward <= 0.75:
-                    task_id = "medium"
-                else:
-                    task_id = "hard"
-        
-        # Priority: exact task_id match → difficulty match → random
-        if task_id in TASK_ID_MAP:
-            self.current_task = TASK_ID_MAP[task_id]
-        elif task_id in TASK_MAP:
-            self.current_task = random.choice(TASK_MAP[task_id])
-        else:
-            self.current_task = random.choice(self.tasks)
-
-        self.previous_attempts = []
-        self.last_error_log = ""
-        self.last_test_results = ""
-        self.is_done = False
-        self.step_count = 0
-        return self._state()
-
-    def step(self, action: CodeArenaAction):
-        if self.is_done:
-            raise ValueError("Environment is done. Call /reset first.")
-
-        self.step_count += 1
-
-        exec_result = run_code_with_tests(
-            code=action.proposed_fix,
-            test_code=self.current_task.test_code,
-            timeout=max(self.current_task.optimal_time_seconds * 10, 2.0),
-        )
-
-        base_reward, reward_components = calculate_reward(exec_result, self.current_task, action.proposed_fix)
-
-        step_penalty = 0.02 * self.step_count
-        novelty_penalty = 0.1 if action.proposed_fix in self.previous_attempts else 0.0
-
-        final_reward = base_reward - step_penalty - novelty_penalty
-        final_reward = max(0.001, min(0.999, float(final_reward)))
-
-        self.previous_attempts.append(action.proposed_fix)
-        self.last_error_log = exec_result.runtime_errors
-        self.last_test_results = (
-            f"{exec_result.test_passed}/{exec_result.test_total} tests passed."
-        )
-
-        if final_reward > 0.99 or self.step_count >= self.max_steps:
-            self.is_done = True
-            self.episode_rewards_history.append(final_reward)
-            if len(self.episode_rewards_history) > 5:
-                self.episode_rewards_history.pop(0)
-
-        info = {
-            "execution_metadata": exec_result.model_dump(),
-            "task_id": self.current_task.task_id,
-            "reward_components": reward_components
-        }
-        return self._state(), final_reward, self.is_done, info
-
-    def _state(self) -> CodeArenaObservation:
-        if not self.current_task:
-            raise ValueError("Environment not initialised. Call /reset first.")
-        return CodeArenaObservation(
-            buggy_code=self.current_task.buggy_code,
-            error_log=self.last_error_log,
-            test_results=self.last_test_results,
-            previous_attempts=self.previous_attempts,
-        )
-
-
-# ── FastAPI app ────────────────────────────────────────────────────────────
-_env = CodeArenaEnv()
+import json, os, random, subprocess, tempfile, sys
+from typing import Optional, List
 
 app = FastAPI(title="CodeArena RL Environment")
 
-# Allow the Vite dev server (port 3000) and any other origin to call this API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
+# -- State ------------------------------------------------
+current_task = {}
+step_count = 0
+previous_attempts = []
+TASKS_DIR = os.path.join(os.path.dirname(__file__), "..", "tasks")
 
+# -- Models -----------------------------------------------
+class ResetRequest(BaseModel):
+    task_id: str = "easy"
+    buggy_code: Optional[str] = None
+
+class StepRequest(BaseModel):
+    proposed_fix: str
+
+# -- Helpers ----------------------------------------------
+def load_random_task(difficulty: str):
+    folder = os.path.join(TASKS_DIR, difficulty)
+    files = [f for f in os.listdir(folder) if f.endswith(".json")]
+    if not files:
+        raise ValueError(f"No tasks found in {folder}")
+    path = os.path.join(folder, random.choice(files))
+    with open(path) as f:
+        return json.load(f)
+
+def run_tests(code: str, tests: list):
+    passed = 0
+    total = len(tests)
+    compile_ok = True
+    error_log = ""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py",
+                                     delete=False, dir=tempfile.gettempdir()) as tmp:
+        tmp.write(code)
+        tmp_path = tmp.name
+
+    try:
+        for test in tests:
+            inp = test["input"]
+            expected = test["expected"]
+
+            # Build a test runner script
+            test_script = f"""
+import sys
+sys.path.insert(0, '')
+exec(open(r'{tmp_path}').read())
+
+inp = {repr(inp)}
+if isinstance(inp, list):
+    result = list(locals().values())[-1](*inp) if callable(list(locals().values())[-1]) else None
+    # find the function
+    import types
+    funcs = {{k:v for k,v in locals().items() if isinstance(v, types.FunctionType)}}
+    if funcs:
+        fn = list(funcs.values())[0]
+        result = fn(*inp)
+    else:
+        result = None
+else:
+    result = None
+
+expected = {repr(expected)}
+print('PASS' if result == expected else f'FAIL got {{result}} expected {{expected}}')
+"""
+            runner = tempfile.NamedTemporaryFile(mode="w", suffix=".py",
+                                                  delete=False, dir=tempfile.gettempdir())
+            runner.write(test_script)
+            runner.close()
+
+            try:
+                proc = subprocess.run(
+                    [sys.executable, runner.name],
+                    capture_output=True, text=True, timeout=5
+                )
+                if "PASS" in proc.stdout:
+                    passed += 1
+                elif proc.returncode != 0:
+                    compile_ok = False
+                    error_log = proc.stderr[:300]
+            except subprocess.TimeoutExpired:
+                error_log = "Timeout"
+            finally:
+                os.unlink(runner.name)
+
+    finally:
+        os.unlink(tmp_path)
+
+    return compile_ok, passed, total, error_log
+
+# -- Endpoints --------------------------------------------
 @app.get("/")
 def health():
     return {"status": "ok", "environment": "CodeArena"}
 
-
 @app.post("/reset")
-def api_reset(body: ResetRequest = ResetRequest()):
-    """Reset the environment. NEVER crashes — returns fallback JSON on error."""
-    try:
-        task_id = body.task_id or "easy"
-        obs = _env.reset(task_id=task_id)
-        return {
-            "status": "success",
-            "message": "Environment reset successfully",
-            "observation": obs.model_dump(),
-            "info": {
-                "task_id": _env.current_task.task_id if _env.current_task else "",
-                "difficulty": _env.current_task.difficulty if _env.current_task else ""
-            }
-        }
-    except Exception:
-        traceback.print_exc()
-        return {
-            "status": "error",
-            "message": "fallback response",
-            "observation": {
-                "buggy_code": "",
-                "error_log": str(traceback.format_exc()),
-                "test_results": "",
-                "previous_attempts": [],
-            },
-        }
+def reset(req: ResetRequest):
+    global current_task, step_count, previous_attempts
 
+    step_count = 0
+    previous_attempts = []
+
+    if req.buggy_code:
+        # Custom mode -- user pasted their own broken code
+        current_task = {
+            "task_id": "custom",
+            "buggy_code": req.buggy_code,
+            "description": "User-provided code -- fix the bug",
+            "tests": [
+                {"input": [1, 2], "expected": None},
+                {"input": [0, 0], "expected": None},
+                {"input": [5, 5], "expected": None}
+            ]
+        }
+    elif req.task_id in ("easy", "medium", "hard"):
+        current_task = load_random_task(req.task_id)
+    elif req.task_id == "auto":
+        # Pick random difficulty
+        current_task = load_random_task(random.choice(["easy", "medium", "hard"]))
+    else:
+        current_task = load_random_task("easy")
+
+    return {
+        "task_id": current_task["task_id"],
+        "observation": {
+            "buggy_code": current_task["buggy_code"],
+            "error_log": "",
+            "test_results": f"0/{len(current_task['tests'])} tests passing",
+            "previous_attempts": []
+        }
+    }
 
 @app.post("/step")
-def api_step(action: CodeArenaAction):
-    try:
-        obs, reward, done, info = _env.step(action)
-        # Safety fallback before force_valid_reward
-        if reward is None:
-            reward = 0.5
-        return {
-            "observation": obs.model_dump(),
-            "reward": force_valid_reward(reward),
-            "done": done,
-            "info": info,
-        }
-    except Exception:
-        traceback.print_exc()
-        return {
-            "status": "error",
-            "message": "fallback response",
-            "observation": {
-                "buggy_code": "",
-                "error_log": str(traceback.format_exc()),
-                "test_results": "",
-                "previous_attempts": [],
-            },
-            "reward": force_valid_reward(0.1),
-            "done": True,
-            "info": {},
-        }
+def step(req: StepRequest):
+    global step_count, previous_attempts
 
+    step_count += 1
+    previous_attempts.append(req.proposed_fix)
+
+    tests = current_task.get("tests", [])
+    
+    # For custom tasks with no expected values, just check compile + run
+    if current_task["task_id"] == "custom":
+        compile_ok, passed, total, error_log = True, 0, 1, ""
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+                f.write(req.proposed_fix)
+                tmp_path = f.name
+            proc = subprocess.run([sys.executable, tmp_path],
+                                   capture_output=True, text=True, timeout=5)
+            compile_ok = proc.returncode == 0
+            passed = 1 if compile_ok else 0
+            error_log = proc.stderr[:300] if not compile_ok else ""
+            os.unlink(tmp_path)
+        except Exception as e:
+            compile_ok = False
+            error_log = str(e)
+    else:
+        compile_ok, passed, total, error_log = run_tests(req.proposed_fix, tests)
+        total = max(total, 1)
+
+    # Reward calculation
+    compile_score = 1.0 if compile_ok else 0.0
+    test_pass_ratio = passed / len(tests) if tests else compile_score
+    reward = round(0.4 * compile_score + 0.6 * test_pass_ratio, 4)
+    reward = max(0.001, min(0.999, reward))
+
+    done = (reward > 0.95) or (step_count >= 5)
+
+    return {
+        "reward": reward,
+        "done": done,
+        "reward_components": {
+            "compile_score": compile_score,
+            "test_pass_ratio": test_pass_ratio
+        },
+        "observation": {
+            "buggy_code": current_task["buggy_code"],
+            "error_log": error_log,
+            "test_results": f"{passed}/{len(tests)} tests passing",
+            "previous_attempts": previous_attempts[-3:]
+        }
+    }
 
 @app.get("/state")
-def api_state():
-    try:
-        obs = _env._state()
-        return {"observation": obs.model_dump()}
-    except Exception:
-        traceback.print_exc()
-        return {
-            "status": "error",
-            "message": "fallback response",
+def state():
+    return {
+        "task_id": current_task.get("task_id", "none"),
+        "step_count": step_count,
+        "observation": {
+            "buggy_code": current_task.get("buggy_code", ""),
+            "error_log": "",
+            "test_results": "",
+            "previous_attempts": previous_attempts
         }
-
-
-# ── CLI entrypoint (OpenEnv / script console_scripts) ─────────────────────
-def main():
-    """Run the CodeArena server via uvicorn."""
-    import uvicorn
-    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
-
-
-if __name__ == "__main__":
-    main()
+    }
