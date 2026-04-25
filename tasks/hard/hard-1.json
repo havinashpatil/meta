@@ -1,0 +1,12 @@
+{
+  "task_id": "hard-1",
+  "description": "Fix the fibonacci function that has wrong logic",
+  "buggy_code": "def fib(n):\n    if n <= 0:\n        return 0\n    if n == 1:\n        return 1\n    return fib(n-1) + fib(n-3)\n",
+  "correct_code": "def fib(n):\n    if n <= 0:\n        return 0\n    if n == 1:\n        return 1\n    return fib(n-1) + fib(n-2)\n",
+  "tests": [
+    {"input": [0], "expected": 0},
+    {"input": [1], "expected": 1},
+    {"input": [6], "expected": 8},
+    {"input": [7], "expected": 13}
+  ]
+}

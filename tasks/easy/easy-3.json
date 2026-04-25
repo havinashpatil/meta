@@ -1,0 +1,12 @@
+{
+  "task_id": "easy-3",
+  "description": "Fix the multiply function missing return statement",
+  "buggy_code": "def multiply(a, b):\n    result = a * b\n",
+  "correct_code": "def multiply(a, b):\n    result = a * b\n    return result\n",
+  "tests": [
+    {"input": [3, 4], "expected": 12},
+    {"input": [0, 5], "expected": 0},
+    {"input": [-2, 3], "expected": -6},
+    {"input": [7, 7], "expected": 49}
+  ]
+}

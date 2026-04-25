@@ -1,0 +1,12 @@
+{
+  "task_id": "medium-1",
+  "description": "Fix the function that should return max but returns min",
+  "buggy_code": "def find_max(nums):\n    result = nums[0]\n    for n in nums:\n        if n < result:\n            result = n\n    return result\n",
+  "correct_code": "def find_max(nums):\n    result = nums[0]\n    for n in nums:\n        if n > result:\n            result = n\n    return result\n",
+  "tests": [
+    {"input": [[1, 5, 3]], "expected": 5},
+    {"input": [[10, 2, 8]], "expected": 10},
+    {"input": [[-1, -5, -2]], "expected": -1},
+    {"input": [[7]], "expected": 7}
+  ]
+}

@@ -1,155 +1,149 @@
-"""
-CodeArena RL Inference
-Rewritten for strict OpenEnv parsing.
-"""
-
-import os
-import argparse
-import httpx
+import requests, csv, os, sys, time
 from datetime import datetime
-from openai import OpenAI
 
-def run_task(task_id: str, backend: str):
-    # Retrieve environment variables as instructed
-    base_url = os.environ.get("API_BASE_URL")
-    api_key = os.environ.get("HF_TOKEN") or os.environ.get("API_KEY")
-    model_name = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-    
-    hf_pipeline = None
-    client = None
-    if backend == "hf":
-        from transformers import pipeline
-        hf_pipeline = pipeline("text-generation", model=model_name)
-    else:
-        client = OpenAI(
-            base_url=base_url,
-            api_key=api_key or "NO_KEY_PROVIDED"
+# Load config
+sys.path.insert(0, os.path.dirname(__file__))
+import config
+
+LOG_FILE = os.path.join(os.path.dirname(__file__), "rewards_log.csv")
+os.makedirs(os.path.join(os.path.dirname(__file__), "results"), exist_ok=True)
+
+def get_fix(buggy_code: str) -> str:
+    prompt_system = (
+        "You are a Python debugging agent. "
+        "You will be given broken Python code. "
+        "Find the bug and fix it. "
+        "Return ONLY the corrected Python code. "
+        "No explanation. No markdown. No code blocks. Just raw Python."
+    )
+
+    if config.MODEL_PROVIDER == "openai":
+        import openai
+        client = openai.OpenAI(api_key=config.API_KEY, base_url=config.API_BASE_URL)
+        response = client.chat.completions.create(
+            model=config.MODEL_NAME,
+            messages=[
+                {"role": "system", "content": prompt_system},
+                {"role": "user", "content": f"Fix this code:\n\n{buggy_code}"}
+            ],
+            temperature=0.2,
+            max_tokens=512
         )
-    
-    # 1. Print the [START] line
-    print(f"[START] task={task_id} env=codearena-rl-benchmark model={model_name}")
-    
-    # 2. Call POST http://localhost:7860/reset
-    try:
-        response = httpx.post("http://localhost:7860/reset", json={"task_id": task_id}, timeout=30.0)
-        response.raise_for_status()
-        obs_json = response.json()
-    except Exception as e:
-        error_msg = str(e).replace("\n", " ").replace("\r", "")
-        print(f"[STEP] step=1 action=reset_failed reward=0.01 done=true error={error_msg}")
-        print(f"[END] success=false steps=1 score=0.01 rewards=0.01")
-        return
-        
-    rewards = []
-    success = False
-    done = False
-    step = 0
-    
-    # 3. For up to 5 steps
-    for i in range(5):
-        if done:
-            break
-            
-        step += 1
-        obs = obs_json.get("observation", {})
-        buggy_code = obs.get("buggy_code", "")
-        error_log = obs.get("error_log", "")
-        test_results = obs.get("test_results", "")
-        
-        system_prompt = "You are an expert Python code repair agent. Fix the buggy Python code.\nReturn ONLY the fixed raw Python code. No markdown, no explanation."
-        user_prompt = f"Fix this buggy Python code:\n\n{buggy_code}\n\nError log:\n{error_log}\n\nTest results so far:\n{test_results}"
-        
-        error_msg = "null"
-        proposed_fix = ""
-        
-        # 3b/c. Call the LLM
-        try:
-            if backend == "hf":
-                prompt = f"{system_prompt}\n\n{user_prompt}"
-                output = hf_pipeline(prompt, max_new_tokens=512, return_full_text=False)
-                proposed_fix = output[0]["generated_text"]
-            else:
-                completion = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ]
-                )
-                proposed_fix = completion.choices[0].message.content
-        except Exception as e:
-            error_msg = str(e).replace("\n", " ").replace("\r", "")
-            # If the LLM call fails, use this fallback fix
-            proposed_fix = obs_json.get("observation", {}).get("buggy_code", "pass")
-            
-        # Cleanup markdown from proposed_fix if LLM ignores instructions
-        if proposed_fix:
-            proposed_fix = proposed_fix.strip()
-            if proposed_fix.startswith("```python"):
-                proposed_fix = proposed_fix[9:]
-            elif proposed_fix.startswith("```"):
-                proposed_fix = proposed_fix[3:]
-            if proposed_fix.endswith("```"):
-                proposed_fix = proposed_fix[:-3]
-            proposed_fix = proposed_fix.strip()
+        return response.choices[0].message.content.strip()
 
-        # 3d. Send proposed_fix to /step
-        try:
-            step_resp = httpx.post("http://localhost:7860/step", json={"proposed_fix": proposed_fix}, timeout=60.0)
-            step_resp.raise_for_status()
-            step_data = step_resp.json()
-            raw_reward = step_data.get("reward", 0.0)
-            done = step_data.get("done", True)
-            obs_json = step_data
-        except Exception as e:
-            raw_reward = 0.01
-            done = True
-            if error_msg == "null":
-                error_msg = str(e).replace("\n", " ").replace("\r", "")
+    elif config.MODEL_PROVIDER == "huggingface":
+        from transformers import pipeline
+        pipe = pipeline("text-generation", model=config.MODEL_NAME, max_new_tokens=256)
+        result = pipe(f"Fix this Python bug:\n{buggy_code}\nFixed code:")
+        return result[0]["generated_text"].split("Fixed code:")[-1].strip()
 
-        # 3e. Clamp it — bounds chosen so :.2f never rounds to 0.00 or 1.00
-        reward = max(0.01, min(0.99, float(raw_reward)))
-        rewards.append(reward)
-        
-        # 3f. Print [STEP] line immediately
-        done_str = "true" if done else "false"
-        action_summary = "llm_fix" if error_msg == "null" else "fallback_fix"
-        print(f"[STEP] step={step} action={action_summary} reward={reward:.2f} done={done_str} error={error_msg}")
-        
-    # 4. Print [END]
-    timestamp = datetime.now().isoformat()
-    compile_score, test_ratio, efficiency_score = 0.0, 0.0, 0.0
-    if "info" in obs_json and "reward_components" in obs_json["info"]:
-        rc = obs_json["info"]["reward_components"]
-        compile_score = rc.get("compile_score", 0.0)
-        test_ratio = rc.get("test_ratio", 0.0)
-        efficiency_score = rc.get("efficiency", 0.0)
-        
-    final_reward = rewards[-1] if rewards else 0.0
-    csv_path = "rewards_log.csv"
-    write_headers = not os.path.exists(csv_path)
-    with open(csv_path, "a", encoding="utf-8") as f:
-        if write_headers:
-            f.write("timestamp,task_id,step,reward,compile_score,test_ratio,efficiency_score\n")
-        f.write(f"{timestamp},{task_id},{step},{final_reward},{compile_score},{test_ratio},{efficiency_score}\n")
+    elif config.MODEL_PROVIDER == "ollama":
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={"model": config.MODEL_NAME,
+                  "prompt": f"{prompt_system}\n\nFix this code:\n{buggy_code}",
+                  "stream": False}
+        )
+        return response.json()["response"].strip()
 
-    success = any(r > 0.5 for r in rewards)
-    success_str = "true" if success else "false"
-    rewards_str = ",".join([f"{r:.2f}" for r in rewards])
-    score = max(0.01, min(0.99, (sum(rewards) / len(rewards)) if rewards else 0.5))
-    print(f"[END] success={success_str} steps={step} score={score:.2f} rewards={rewards_str}")
-
-def main():
-    parser = argparse.ArgumentParser(description="CodeArena RL Inference")
-    parser.add_argument("--backend", type=str, choices=["openai", "hf"], default="openai", help="Backend to use for LLM generation.")
-    args = parser.parse_args()
-
-    target_task = os.environ.get("CODEARENA_TASK")
-    if target_task:
-        run_task(target_task, args.backend)
     else:
-        for t in ["easy", "medium", "hard"]:
-            run_task(t, args.backend)
+        raise ValueError(f"Unknown provider: {config.MODEL_PROVIDER}")
+
+def run_training():
+    print(f"\n{'='*50}")
+    print(f"CodeArena Training Run")
+    print(f"Model: {config.MODEL_NAME} via {config.MODEL_PROVIDER}")
+    print(f"Episodes: {config.EPISODES} x {config.STEPS_PER_EPISODE} steps")
+    print(f"{'='*50}\n")
+
+    # Write CSV header
+    with open(LOG_FILE, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            "timestamp", "episode", "step", "task_id",
+            "reward", "compile_score", "test_pass_ratio"
+        ])
+        writer.writeheader()
+
+    all_rewards = []
+
+    for episode in range(config.EPISODES):
+        # Alternate between easy and medium for variety
+        difficulty = "easy" if episode % 3 != 2 else "medium"
+        
+        reset_resp = requests.post(
+            f"{config.ENVIRONMENT_URL}/reset",
+            json={"task_id": difficulty}
+        ).json()
+
+        obs = reset_resp["observation"]
+        task_id = reset_resp["task_id"]
+        episode_rewards = []
+
+        for step_num in range(config.STEPS_PER_EPISODE):
+            try:
+                fix = get_fix(obs["buggy_code"])
+            except Exception as e:
+                print(f"  Model error: {e}")
+                fix = obs["buggy_code"]  # fallback: send buggy code back
+
+            try:
+                result = requests.post(
+                    f"{config.ENVIRONMENT_URL}/step",
+                    json={"proposed_fix": fix},
+                    timeout=30
+                ).json()
+            except Exception as e:
+                print(f"  Environment error: {e}")
+                break
+
+            reward = result["reward"]
+            components = result.get("reward_components", {})
+            episode_rewards.append(reward)
+            all_rewards.append(reward)
+
+            # Log to CSV
+            with open(LOG_FILE, "a", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=[
+                    "timestamp", "episode", "step", "task_id",
+                    "reward", "compile_score", "test_pass_ratio"
+                ])
+                writer.writerow({
+                    "timestamp": datetime.now().isoformat(),
+                    "episode": episode,
+                    "step": step_num,
+                    "task_id": task_id,
+                    "reward": reward,
+                    "compile_score": components.get("compile_score", 0),
+                    "test_pass_ratio": components.get("test_pass_ratio", 0)
+                })
+
+            print(f"  Ep {episode:02d} Step {step_num} | "
+                  f"reward={reward:.3f} | "
+                  f"compile={components.get('compile_score',0):.1f} | "
+                  f"tests={components.get('test_pass_ratio',0):.2f} | "
+                  f"done={result['done']}")
+
+            if result["done"]:
+                break
+
+            obs = result["observation"]
+            time.sleep(0.5)  # be polite to API
+
+        ep_avg = sum(episode_rewards) / len(episode_rewards) if episode_rewards else 0
+        print(f"Episode {episode:02d} done. Avg reward: {ep_avg:.3f}\n")
+
+    # Final summary
+    if all_rewards:
+        first10 = sum(all_rewards[:10]) / min(10, len(all_rewards))
+        last10 = sum(all_rewards[-10:]) / min(10, len(all_rewards))
+        improvement = last10 - first10
+        print(f"\n{'='*50}")
+        print(f"Training Complete")
+        print(f"First 10 steps avg reward : {first10:.3f}")
+        print(f"Last  10 steps avg reward : {last10:.3f}")
+        print(f"Improvement               : {improvement:+.3f}")
+        print(f"Rewards logged to         : {LOG_FILE}")
+        print(f"{'='*50}\n")
 
 if __name__ == "__main__":
-    main()
+    run_training()

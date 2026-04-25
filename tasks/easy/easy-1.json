@@ -1,0 +1,12 @@
+{
+  "task_id": "easy-1",
+  "description": "Fix the add function that uses wrong operator",
+  "buggy_code": "def add(a, b):\n    return a - b\n",
+  "correct_code": "def add(a, b):\n    return a + b\n",
+  "tests": [
+    {"input": [2, 3], "expected": 5},
+    {"input": [0, 0], "expected": 0},
+    {"input": [-1, 1], "expected": 0},
+    {"input": [10, 5], "expected": 15}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "task_id": "easy-2",
+  "description": "Fix the sum function with off-by-one error",
+  "buggy_code": "def sum_list(nums):\n    total = 0\n    for i in range(len(nums) - 1):\n        total += nums[i]\n    return total\n",
+  "correct_code": "def sum_list(nums):\n    total = 0\n    for i in range(len(nums)):\n        total += nums[i]\n    return total\n",
+  "tests": [
+    {"input": [[1, 2, 3]], "expected": 6},
+    {"input": [[10, 20, 30]], "expected": 60},
+    {"input": [[0, 0, 0]], "expected": 0},
+    {"input": [[5]], "expected": 5}
+  ]
+}
