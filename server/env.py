@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from .models import CodeArenaObservation, CodeArenaAction, TaskInfo
 from .executor import run_code_with_tests
-from .grader import calculate_reward, safe_reward
+from .grader import calculate_reward, safe_reward, force_valid_reward
 from tasks import ALL_TASKS
 
 class CodeArenaEnv:
@@ -95,9 +95,12 @@ def api_reset(body: dict = None):
 def api_step(action: CodeArenaAction):
     try:
         obs, reward, done, info = _env.step(action)
+        # Safety fallback before force_valid_reward
+        if reward is None:
+            reward = 0.5
         return {
             "observation": obs.model_dump(),
-            "reward": reward,
+            "reward": force_valid_reward(reward),
             "done": done,
             "info": info
         }

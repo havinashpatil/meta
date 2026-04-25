@@ -9,11 +9,12 @@ import traceback
 from typing import Optional
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from server.models import CodeArenaObservation, CodeArenaAction, TaskInfo
 from server.executor import run_code_with_tests
-from server.grader import calculate_reward, safe_reward
+from server.grader import calculate_reward, safe_reward, force_valid_reward
 from tasks import ALL_TASKS
 
 
@@ -103,6 +104,15 @@ _env = CodeArenaEnv()
 
 app = FastAPI(title="CodeArena RL Environment")
 
+# Allow the Vite dev server (port 3000) and any other origin to call this API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/")
 def health():
@@ -138,9 +148,12 @@ def api_reset(body: ResetRequest = ResetRequest()):
 def api_step(action: CodeArenaAction):
     try:
         obs, reward, done, info = _env.step(action)
+        # Safety fallback before force_valid_reward
+        if reward is None:
+            reward = 0.5
         return {
             "observation": obs.model_dump(),
-            "reward": safe_reward(reward),
+            "reward": force_valid_reward(reward),
             "done": done,
             "info": info,
         }
@@ -155,7 +168,7 @@ def api_step(action: CodeArenaAction):
                 "test_results": "",
                 "previous_attempts": [],
             },
-            "reward": safe_reward(0.1),
+            "reward": force_valid_reward(0.1),
             "done": True,
             "info": {},
         }
