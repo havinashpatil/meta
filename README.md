@@ -1,3 +1,13 @@
+---
+title: CodeArena RL Benchmark
+emoji: 🏟️
+colorFrom: green
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # CodeArena RL Benchmark
 
 GitHub Copilot, Cursor, Devin — every major coding AI is 
@@ -139,7 +149,7 @@ This generates `reward_curve.png` and `reward_by_task.png` in the `results/` dir
 This benchmark strictly adheres to the OpenEnv specification. See `openenv.yaml` for full configuration details.
 
 ## Links
-- HuggingFace Space: [URL]
+- HuggingFace Space: https://huggingface.co/spaces/adityanaikhpt/codearena
 - Colab Training Notebook: [URL]
 - HuggingFace Blog Post: [URL]
 - Demo Video: [URL]
