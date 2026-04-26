@@ -23,20 +23,20 @@ from server.memory import store_success, retrieve_memory, log_complexity_reward
 TGI_BASE_URL = os.environ.get("TGI_BASE_URL", "http://localhost:8080")
 TGI_AVAILABLE = False
 
-def check_tgi_availability():
+def check_tgi_availability(tgi_url: str = TGI_BASE_URL) -> bool:
     """Check if TGI server is available."""
     global TGI_AVAILABLE
     try:
-        response = httpx.get(f"{TGI_BASE_URL}/health", timeout=5.0)
+        response = httpx.get(f"{tgi_url}/health", timeout=5.0)
         TGI_AVAILABLE = response.status_code == 200
-    except:
+    except Exception:
         TGI_AVAILABLE = False
     return TGI_AVAILABLE
 
 
-def fix_with_tgi(code: str) -> Optional[str]:
+def fix_with_tgi(code: str, tgi_url: str = TGI_BASE_URL) -> Optional[str]:
     """Use TGI for advanced code fixing."""
-    if not TGI_AVAILABLE and not check_tgi_availability():
+    if not TGI_AVAILABLE and not check_tgi_availability(tgi_url):
         return None
 
     prompt = f"""You are an expert competitive programmer.
@@ -54,7 +54,7 @@ Return ONLY the corrected code without any explanation:
 
     try:
         response = httpx.post(
-            f"{TGI_BASE_URL}/v1/chat/completions",
+            f"{tgi_url}/v1/chat/completions",
             json={
                 "model": "tgi",
                 "messages": [{"role": "user", "content": prompt}],
@@ -479,7 +479,7 @@ def generate_fix(
     Returns: { fixed_code, method, success, explanation }
     """
     if use_tgi:
-        fixed_code = fix_with_tgi(code)
+        fixed_code = fix_with_tgi(code, tgi_url=tgi_url)
         if fixed_code:
             # Log complexity vs reward for research tracking
             complexity = detect_complexity(fixed_code)
