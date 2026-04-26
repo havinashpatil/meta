@@ -11,3 +11,4 @@ datasets
 trl
 accelerate
 bitsandbytes
+huggingface_hub

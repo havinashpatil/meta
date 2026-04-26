@@ -34,23 +34,39 @@ def check_tgi_availability(tgi_url: str = TGI_BASE_URL) -> bool:
     return TGI_AVAILABLE
 
 
-def fix_with_tgi(code: str, tgi_url: str = TGI_BASE_URL) -> Optional[str]:
-    """Use TGI for advanced code fixing."""
-    if not TGI_AVAILABLE and not check_tgi_availability(tgi_url):
+def fix_with_hf_api(code: str, error_log: str = "") -> Optional[str]:
+    """Use Hugging Face Serverless Inference API as a fallback."""
+    try:
+        from huggingface_hub import InferenceClient
+        model = "Qwen/Qwen2.5-Coder-3B-Instruct"
+        token = os.environ.get("HF_TOKEN")
+        client = InferenceClient(model=model, token=token)
+
+        prompt = f"You are an expert competitive programmer.\n\nFix the following Python code:\n- Remove syntax errors\n- Ensure correct logic\n- Optimize to O(n) if possible\n\nPrevious Error:\n{error_log}\n\nCode:\n{code}\n\nReturn ONLY the corrected code without any explanation wrapped in ```python ... ```:"
+
+        response = client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500,
+            temperature=0.3
+        )
+        result = response.choices[0].message.content.strip()
+        
+        import re
+        code_match = re.search(r'```python\n(.*?)\n```', result, re.DOTALL)
+        if not code_match:
+            code_match = re.search(r'```(.*?)```', result, re.DOTALL)
+        return code_match.group(1).strip() if code_match else result.replace("```", "").strip()
+    except Exception as e:
+        print(f"HF API fix error: {e}", file=sys.stderr)
         return None
 
-    prompt = f"""You are an expert competitive programmer.
+def fix_with_tgi(code: str, tgi_url: str = TGI_BASE_URL, error_log: str = "") -> Optional[str]:
+    """Use TGI for advanced code fixing. Fallbacks to HF Serverless API if unavailable."""
+    if not TGI_AVAILABLE and not check_tgi_availability(tgi_url):
+        print("TGI unavailable. Falling back to HF Serverless Inference API...", file=sys.stderr)
+        return fix_with_hf_api(code, error_log)
 
-Fix the following Python code:
-- Remove syntax errors
-- Ensure correct logic
-- Optimize to O(n) if possible
-
-Code:
-{code}
-
-Return ONLY the corrected code without any explanation:
-"""
+    prompt = f"You are an expert competitive programmer.\n\nFix the following Python code:\n- Remove syntax errors\n- Ensure correct logic\n- Optimize to O(n) if possible\n\nCode:\n{code}\n\nReturn ONLY the corrected code without any explanation wrapped in ```python ... ```:"
 
     try:
         response = httpx.post(
@@ -61,21 +77,22 @@ Return ONLY the corrected code without any explanation:
                 "max_tokens": 500,
                 "temperature": 0.3
             },
-            timeout=30.0
+            timeout=10.0
         )
         response.raise_for_status()
         result = response.json()
         fixed_code = result["choices"][0]["message"]["content"].strip()
 
-        # Clean up the response
-        if "Return ONLY the corrected code" in fixed_code:
-            fixed_code = fixed_code.split("Return ONLY the corrected code")[-1].strip()
-
-        return fixed_code if fixed_code else None
+        import re
+        code_match = re.search(r'```python\n(.*?)\n```', fixed_code, re.DOTALL)
+        if not code_match:
+            code_match = re.search(r'```(.*?)```', fixed_code, re.DOTALL)
+        return code_match.group(1).strip() if code_match else fixed_code.replace("```", "").strip()
 
     except Exception as e:
         print(f"TGI fix error: {e}", file=sys.stderr)
-        return None
+        print("Falling back to HF Serverless Inference API...", file=sys.stderr)
+        return fix_with_hf_api(code, error_log)
 
 
 # ─── Pattern-Based Fixes ─────────────────────────────────────────────────────
@@ -517,7 +534,7 @@ def generate_fix(
     Returns: { fixed_code, method, success, explanation }
     """
     if use_tgi:
-        fixed_code = fix_with_tgi(code, tgi_url=tgi_url)
+        fixed_code = fix_with_tgi(code, tgi_url=tgi_url, error_log=error_log)
         if fixed_code and validate_code(fixed_code):
             # Log complexity vs reward for research tracking
             complexity = detect_complexity(fixed_code)
