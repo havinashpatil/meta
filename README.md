@@ -1,6 +1,6 @@
 ---
 title: CodeArena RL Agent
-emoji: ??
+emoji: 🚀
 colorFrom: blue
 colorTo: purple
 sdk: docker
