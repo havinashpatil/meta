@@ -303,6 +303,7 @@ CodeArena is infrastructure. Plug any model in. Run it. Get a number. Compare it
 | 📓 Training Notebook (Colab) | [Open in Colab](https://colab.research.google.com/github/havinashpatil/meta/blob/main/train_grpo.ipynb) |
 | 💻 Source Code (GitHub) | [github.com/havinashpatil/meta](https://github.com/havinashpatil/meta) |
 | 📋 OpenEnv Manifest | [openenv.yaml](https://github.com/havinashpatil/meta/blob/main/openenv.yaml) |
+| 📺 YouTube Video | [https://youtu.be/LmsJvAMTdCY](https://youtu.be/LmsJvAMTdCY) |
 
 ---
 

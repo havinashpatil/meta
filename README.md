@@ -247,6 +247,7 @@ Features:
 | **📝 Blog / Writeup** | [Read on HuggingFace](https://huggingface.co/spaces/ceoavinash/codearena-rl/discussions/1) |
 | **💻 GitHub Repository** | [github.com/havinashpatil/meta](https://github.com/havinashpatil/meta) |
 | **📋 OpenEnv Manifest** | [openenv.yaml](./openenv.yaml) |
+| **📺 YouTube Video** | [https://youtu.be/LmsJvAMTdCY](https://youtu.be/LmsJvAMTdCY) |
 
 ---
 
