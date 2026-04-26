@@ -2,11 +2,24 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# System dependencies
+# Install Node.js for building frontend
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Build frontend
+COPY frontend/package*.json ./frontend/
+WORKDIR /app/frontend
+RUN npm install
+COPY frontend/ .
+RUN npm run build
+
+WORKDIR /app
+
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
