@@ -119,6 +119,60 @@ CodeArena is infrastructure. Plug any model in. Run it. Get a number.
    python create_tasks.py
    ```
 
+## AI Coding System (Local Hugging Face LLM)
+
+CodeArena now includes a built-in AI code fixer using Hugging Face Transformers for local, offline code repair.
+
+### Features
+- **Local LLM**: No API keys or internet required
+- **Fast Fixes**: Uses TinyLlama-1.1B for quick code corrections
+- **Command Line**: Simple stdin/stdout interface
+- **Optimized Prompts**: Engineered for code repair tasks
+
+### Setup
+1. **Install Dependencies:**
+   ```bash
+   pip install accelerate bitsandbytes  # Added to requirements.txt
+   ```
+
+2. **First Run (Model Download):**
+   ```bash
+   python ai_fix.py < any_code.py
+   ```
+   This will download the model (~600MB) on first use.
+
+### Usage
+**Fix a Python file:**
+```bash
+cat buggy_code.py | python ai_fix.py
+```
+
+**Interactive fixing:**
+```bash
+# Windows
+type buggy_code.py | ai_fix.bat
+
+# Linux/Mac
+cat buggy_code.py | python ai_fix.py
+```
+
+**Example:**
+```bash
+echo "def hello()
+    print('world')" | python ai_fix.py
+# Output: def hello():
+#             print('world')
+```
+
+### Model Options
+- **Default**: `TinyLlama/TinyLlama-1.1B-Chat-v1.0` (fast, lightweight)
+- **Change model**: Edit `MODEL_NAME` in `ai_fix.py`
+
+### Performance
+- **CPU**: ~10-30 seconds per fix
+- **GPU**: ~2-5 seconds per fix
+- **Memory**: ~2GB RAM minimum
+
 ## Usage
 
 ### 0. Training with TRL (Colab)
