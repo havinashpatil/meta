@@ -8,7 +8,8 @@ class CodeArenaObservation(BaseModel):
     previous_attempts: List[str]
     
 class CodeArenaAction(BaseModel):
-    proposed_fix: str
+    proposed_fix: Optional[str] = None
+    action: Optional[str] = None
 
 class TaskInfo(BaseModel):
     task_id: str

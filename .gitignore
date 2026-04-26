@@ -1,5 +1,58 @@
+# Environments
 venv/
+.env
+node_modules/
+dist/
+
+# Python
 __pycache__/
 *.pyc
-.env
+*.pyo
+*.pyd
+.Python
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Large Model Files & Checkpoints
+gemma-merged/
+gemma-code-optimizer/
+hf_sft_checkpoint/
+checkpoint_*.json
+*.bin
+*.gguf
+*.pt
+*.safetensors
+llama.cpp/
+
+# Training Outputs & Logs
+*check-output/
+ollama_rl_out/
+results/*.png
+rewards_log.csv
+complexity_rewards.csv
+agent_memory.json
+*.log
+ds_out.txt
+codearena_finetune_*.txt
+optimized_rl_results.json
+rl_training_results.json
+ultra_optimized_rl_results.json
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project Specific
 test_reset.py
+meta/
+scratch/

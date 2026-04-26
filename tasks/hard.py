@@ -27,11 +27,13 @@ class TestHard(unittest.TestCase):
     def test_empty(self):
         self.assertEqual(max_subarray_sum([]), 0)
     def test_large(self):
-        # O(N^3) would take > 0.1s for N=300 in Python, but O(N) is < 0.01s
-        random.seed(42)
-        arr = [random.randint(-100, 100) for _ in range(300)]
+        import time
+        arr = list(range(1000))  # N=1000
+        start = time.time()
         ans = max_subarray_sum(arr)
-        self.assertIsInstance(ans, int)
+        end = time.time()
+        self.assertLess(end - start, 0.05, "Execution time exceeded optimal threshold! Your complexity is worse than O(N).")
+        self.assertEqual(ans, sum(arr))
 """,
-    optimal_time_seconds=0.1
+    optimal_time_seconds=0.05
 )

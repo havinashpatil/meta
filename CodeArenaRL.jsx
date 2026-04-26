@@ -321,10 +321,8 @@ export default function CodeArenaRL() {
      OLLAMA CALL
   ─────────────────────────────────────────── */
   const callOllama = useCallback(async (obs) => {
+    const systemPrompt = `You are an expert Python debugging agent in a reinforcement learning environment. Return ONLY the fixed Python code — no explanation, no markdown, no code fences.`;
     const prompt = [
-      `You are an expert Python debugging agent in a reinforcement learning environment.`,
-      `Return ONLY the fixed Python code — no explanation, no markdown, no code fences.`,
-      ``,
       `Task: ${task.description}`,
       ``,
       `BUGGY CODE:`,
@@ -344,29 +342,67 @@ export default function CodeArenaRL() {
       `Return ONLY the corrected Python code:`,
     ].join("\n");
 
+    const cleanCode = (text) =>
+      (text || "")
+        .trim()
+        .replace(/^```(?:python)?\n?/gm, "")
+        .replace(/```\s*$/gm, "")
+        .trim();
+
     setTokenEst(Math.ceil(prompt.length / 4));
 
-    const res = await fetch(`${ollamaUrl}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: ollamaModel,
-        prompt,
-        stream: false,
-        options: { temperature: 0.2, num_predict: 512 },
-      }),
-    });
+    const requestGenerate = async () => {
+      const res = await fetch(`${ollamaUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: ollamaModel,
+          prompt,
+          stream: false,
+          options: { temperature: 0.2, num_predict: 1024 },
+        }),
+      });
+      if (!res.ok) {
+        if (res.status === 404 || res.status === 405) {
+          return null;
+        }
+        const errText = await res.text();
+        throw new Error(`Ollama error ${res.status}: ${errText}`);
+      }
+      const data = await res.json();
+      return cleanCode(data.response || data.text || "");
+    };
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Ollama error ${res.status}: ${errText}`);
+    const requestChat = async () => {
+      const res = await fetch(`${ollamaUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: ollamaModel,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt },
+          ],
+          stream: false,
+          options: { temperature: 0.2, max_tokens: 1024, top_p: 0.9 },
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Ollama chat error ${res.status}: ${errText}`);
+      }
+      const data = await res.json();
+      return cleanCode(data.message?.content || data.response || data.text || "");
+    };
+
+    let code = await requestGenerate();
+    if (code === null) {
+      code = await requestChat();
     }
 
-    const data = await res.json();
-    let code = (data.response || "").trim();
-
-    // Strip markdown code fences if model adds them
-    code = code.replace(/^```[\w]*\n?/gm, "").replace(/```\s*$/gm, "").trim();
+    if (!code) {
+      throw new Error("Ollama returned an empty response. Check the Ollama model endpoint and model name.");
+    }
     return code;
   }, [ollamaUrl, ollamaModel, task]);
 

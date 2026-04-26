@@ -185,13 +185,21 @@ function AnsiLine({ text }) {
    REWARD CHART (Recharts)
 ───────────────────────────────────────────── */
 function RewardChart({ rewards }) {
+  const [chartReady, setChartReady] = useState(false);
+  useEffect(() => {
+    setChartReady(true);
+  }, []);
+
   const data = rewards.map((r, i) => ({ step: i + 1, reward: r }));
   for (let i = data.length + 1; i <= 5; i++) {
     data.push({ step: i, reward: null });
   }
+  if (!chartReady) {
+    return <div style={{ width: "100%", minHeight: 120, minWidth: 0 }} />;
+  }
   return (
-    <div style={{ width: "100%", height: 120 }}>
-      <ResponsiveContainer width="100%" height="100%">
+    <div style={{ width: "100%", minHeight: 120, minWidth: 0 }}>
+      <ResponsiveContainer width="100%" height={120} minHeight={120} minWidth={120}>
         <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <XAxis dataKey="step" stroke="#334155" tick={{ fill: "#334155", fontSize: 10, fontFamily: "'JetBrains Mono',monospace" }} />
           <YAxis domain={[0, 1]} ticks={[0, 0.5, 1]} stroke="#334155" tick={{ fill: "#334155", fontSize: 10, fontFamily: "'JetBrains Mono',monospace" }} />
@@ -211,7 +219,7 @@ function RewardChart({ rewards }) {
 export default function CodeArenaRL() {
   /* ── Ollama config ── */
   const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
-  const [ollamaModel, setOllamaModel] = useState("codellama");
+  const [ollamaModel, setOllamaModel] = useState("llama3.2:latest");
   const [availableModels, setAvailableModels] = useState([]);
   const [ollamaStatus, setOllamaStatus] = useState("checking"); // checking | online | offline
 
@@ -266,14 +274,14 @@ export default function CodeArenaRL() {
       if (res.ok) {
         const data = await res.json();
         const names = (data.models || []).map(m => m.name);
-        setAvailableModels(names.length > 0 ? names : ["codellama", "llama3", "mistral", "deepseek-coder"]);
+        setAvailableModels(names.length > 0 ? names : ["llama3.2:latest", "gemma3:1b", "gemma3:4b", "llava:latest"]);
         setOllamaStatus("online");
       } else {
         setOllamaStatus("offline");
       }
     } catch {
       setOllamaStatus("offline");
-      setAvailableModels(["codellama", "llama3", "mistral", "deepseek-coder"]);
+      setAvailableModels(["llama3.2:latest", "gemma3:1b", "gemma3:4b", "llava:latest"]);
     }
   }, [ollamaUrl]);
 
@@ -349,27 +357,62 @@ export default function CodeArenaRL() {
     setTokenEst(Math.ceil(prompt.length / 4));
 
     const baseUrl = ollamaUrl.replace(/\/+$/, "");
-    const res = await fetch(`${baseUrl}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: ollamaModel,
-        prompt,
-        stream: false,
-        options: { temperature: 0.2, num_predict: 512 },
-      }),
-    });
+    const cleanCode = (text) =>
+      (text || "")
+        .trim()
+        .replace(/^```(?:python)?\n?/gm, "")
+        .replace(/```\s*$/gm, "")
+        .trim();
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Ollama error ${res.status}: ${errText}`);
+    const tryGenerate = async () => {
+      const res = await fetch(`${baseUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: ollamaModel,
+          prompt,
+          stream: false,
+          options: { temperature: 0.2, num_predict: 512 },
+        }),
+      });
+      if (!res.ok) {
+        if (res.status === 404 || res.status === 405) return null;
+        const errText = await res.text();
+        throw new Error(`Ollama error ${res.status}: ${errText}`);
+      }
+      const data = await res.json();
+      return cleanCode(data.response || data.text || "");
+    };
+
+    const tryChat = async () => {
+      const res = await fetch(`${baseUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: ollamaModel,
+          messages: [
+            { role: "system", content: "You are an expert Python debugging agent. Return ONLY the fixed Python code — no explanation, no markdown, no code fences." },
+            { role: "user", content: prompt },
+          ],
+          stream: false,
+          options: { temperature: 0.2, max_tokens: 1024, top_p: 0.9 },
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Ollama chat error ${res.status}: ${errText}`);
+      }
+      const data = await res.json();
+      return cleanCode(data.response || data.text || data.message?.content || "");
+    };
+
+    let code = await tryGenerate();
+    if (code === null || !code) {
+      code = await tryChat();
     }
-
-    const data = await res.json();
-    let code = (data.response || "").trim();
-
-    // Strip markdown code fences if model adds them
-    code = code.replace(/^```[\w]*\n?/gm, "").replace(/```\s*$/gm, "").trim();
+    if (!code) {
+      throw new Error("Ollama returned no valid code from /api/generate or /api/chat.");
+    }
     return code;
   }, [ollamaUrl, ollamaModel, task]);
 
@@ -712,7 +755,7 @@ export default function CodeArenaRL() {
                       {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   ) : (
-                    <input className="cfg-input" value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} placeholder="codellama" />
+                    <input className="cfg-input" value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} placeholder="llama3.2:latest" />
                   )}
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
@@ -724,7 +767,7 @@ export default function CodeArenaRL() {
                   <div style={{ fontSize: 10, color: "#ffaa00", fontFamily: "'JetBrains Mono',monospace", background: "rgba(255,170,0,0.08)", border: "1px solid rgba(255,170,0,0.2)", borderRadius: 4, padding: "6px 8px" }}>
                     💡 Run: <strong>ollama serve</strong><br />
                     Then pull a model:<br />
-                    <strong>ollama pull codellama</strong>
+                    <strong>ollama pull llama3.2:latest</strong>
                   </div>
                 )}
               </div>

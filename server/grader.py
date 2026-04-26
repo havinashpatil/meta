@@ -31,13 +31,24 @@ def normalize_reward(passed: int, total: int) -> float:
     return force_valid_reward(raw)
 
 _LLM_CACHE = {}
+_JUDGE_DISABLED_WARNED = False
 
 def get_llm_quality_score(proposed_fix: str) -> dict:
+    global _JUDGE_DISABLED_WARNED
     if proposed_fix in _LLM_CACHE:
         return _LLM_CACHE[proposed_fix]
-    
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        if not _JUDGE_DISABLED_WARNED:
+            print("LLM judge disabled: OPENAI_API_KEY not set. Using neutral fallback scores.")
+            _JUDGE_DISABLED_WARNED = True
+        fallback = {"code_quality": 0.5, "security": 0.5, "correctness": 0.5}
+        _LLM_CACHE[proposed_fix] = fallback
+        return fallback
+
     try:
-        client = OpenAI()
+        client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
             model=os.environ.get("JUDGE_MODEL", "gpt-4o-mini"),
             messages=[
@@ -84,13 +95,23 @@ def calculate_reward_components(exec_result: ExecutionResult, task_info: TaskInf
 def calculate_reward(exec_result: ExecutionResult, task_info: TaskInfo, proposed_fix: str) -> tuple[float, dict]:
     comps = calculate_reward_components(exec_result, task_info, proposed_fix)
     base_reward = (
-        0.25 * comps["compile_score"] +
-        0.30 * comps["test_ratio"] +
-        0.15 * comps["efficiency"] +
-        0.15 * comps["llm_correctness"] +
-        0.10 * comps["llm_security"] +
-        0.05 * comps["llm_quality"]
+        0.15 * comps["compile_score"] +  
+        0.35 * comps["test_ratio"] +      
+        0.30 * comps["efficiency"] +     # Increased from 0.15 to push optimization
+        0.10 * comps["llm_correctness"] +
+        0.05 * comps["llm_security"] +   
+        0.05 * comps["llm_quality"]      
     )
+    
+    # Compile bonus: encourage first milestone
+    if comps["compile_score"] > 0.0:
+        base_reward += 0.05
+        
+    # Harsh complexity penalty: if runtime is > 5x optimal, penalize heavily
+    if exec_result.test_passed == exec_result.test_total and exec_result.test_total > 0:
+        if exec_result.execution_time_seconds > task_info.optimal_time_seconds * 5:
+            base_reward -= 0.30
+    
     return base_reward, comps
 
 def grade(*args, **kwargs) -> float:

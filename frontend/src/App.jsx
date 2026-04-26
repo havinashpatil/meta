@@ -1,4 +1,5 @@
-import CodeArenaRL from './CodeArenaRL';
+import Dashboard from './pages/Dashboard';
+
 export default function App() {
-  return <CodeArenaRL />;
+  return <Dashboard />;
 }
