@@ -6,7 +6,7 @@ colorTo: purple
 sdk: docker
 pinned: false
 ---
-[![HuggingFace Space](https://img.shields.io/badge/🤗%20Space-Live-brightgreen)](HF_SPACE_URL)
+[![HuggingFace Space](https://img.shields.io/badge/🤗%20Space-Live-brightgreen)](https://huggingface.co/spaces/ceoavinash/codearena-rl)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](COLAB_URL)
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-blue)](./openenv.yaml)
 [![Theme](https://img.shields.io/badge/Theme%20%234-Self--Improvement-purple)]()
@@ -179,9 +179,8 @@ This benchmark strictly adheres to the OpenEnv specification. See `openenv.yaml`
 
 | Resource | URL |
 |---|---|
-| HuggingFace Space (live environment) | [CodeArena on HF Spaces](HF_SPACE_URL) |
+| HuggingFace Space (live environment) | [CodeArena on HF Spaces](https://huggingface.co/spaces/ceoavinash/codearena-rl) |
 | Colab Training Notebook (TRL GRPO) | [Open in Colab](COLAB_URL) |
 | HuggingFace Blog Post | [Read on HF](HF_BLOG_URL) |
 | Demo Video (< 2 min) | [Watch on YouTube](YOUTUBE_URL) |
 | OpenEnv Spec | [openenv.yaml](./openenv.yaml) |
-
