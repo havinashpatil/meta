@@ -119,59 +119,92 @@ CodeArena is infrastructure. Plug any model in. Run it. Get a number.
    python create_tasks.py
    ```
 
-## AI Coding System (Local Hugging Face LLM)
+## AI Coding System (TGI Integration)
 
-CodeArena now includes a built-in AI code fixer using Hugging Face Transformers for local, offline code repair.
+CodeArena now includes a built-in AI code fixer using Hugging Face's Text Generation Inference (TGI) for production-ready LLM serving.
 
 ### Features
-- **Local LLM**: No API keys or internet required
-- **Fast Fixes**: Uses TinyLlama-1.1B for quick code corrections
-- **Command Line**: Simple stdin/stdout interface
-- **Optimized Prompts**: Engineered for code repair tasks
+- **Production LLM Serving**: Uses TGI for optimized inference
+- **Cloud Deployment**: Works on Hugging Face Spaces and other platforms
+- **OpenAI-Compatible API**: Standard chat completions interface
+- **Fallback System**: Built-in pattern-based fixes when LLM unavailable
+- **Memory & Learning**: Stores successful fixes for continuous improvement
 
-### Setup
-1. **Install Dependencies:**
-   ```bash
-   pip install accelerate bitsandbytes  # Added to requirements.txt
-   ```
+### Architecture
+- **TGI Server**: Runs TinyLlama-1.1B-Chat-v1.0 on port 8080
+- **FastAPI Backend**: Serves RL environment and AI fixing on port 7860
+- **React Frontend**: Web interface for monitoring and interaction
 
-2. **First Run (Model Download):**
-   ```bash
-   python ai_fix.py < any_code.py
-   ```
-   This will download the model (~600MB) on first use.
-
-### Usage
-**Fix a Python file:**
+### API Endpoints
+**Fix Code:**
 ```bash
-cat buggy_code.py | python ai_fix.py
+curl -X POST "https://ceoavinash-codearena-rl.hf.space/fix" \
+  -H "Content-Type: application/json" \
+  -d '{"code": "def hello() print(\"world\")", "use_tgi": true}'
 ```
 
-**Interactive fixing:**
-```bash
-# Windows
-type buggy_code.py | ai_fix.bat
-
-# Linux/Mac
-cat buggy_code.py | python ai_fix.py
+**Response:**
+```json
+{
+  "fixed_code": "def hello():\n    print(\"world\")",
+  "method": "tgi",
+  "success": true,
+  "explanation": "Fixed using TGI LLM"
+}
 ```
 
-**Example:**
+### Local Development
+For local testing with TGI:
+
 ```bash
-echo "def hello()
-    print('world')" | python ai_fix.py
-# Output: def hello():
-#             print('world')
+# Start TGI server
+docker run -p 8080:80 ghcr.io/huggingface/text-generation-inference:3.0.2 \
+  --model-id TinyLlama/TinyLlama-1.1B-Chat-v1.0
+
+# Start CodeArena
+uvicorn server.app:app --port 7860
 ```
 
-### Model Options
-- **Default**: `TinyLlama/TinyLlama-1.1B-Chat-v1.0` (fast, lightweight)
-- **Change model**: Edit `MODEL_NAME` in `ai_fix.py`
+### Model Performance
+- **Model**: TinyLlama-1.1B-Chat-v1.0
+- **Response Time**: ~2-5 seconds per fix
+- **Memory Usage**: ~2GB RAM
+- **Accuracy**: High for syntax errors, good for logic fixes
 
-### Performance
-- **CPU**: ~10-30 seconds per fix
-- **GPU**: ~2-5 seconds per fix
-- **Memory**: ~2GB RAM minimum
+### Integration with RL Training
+The AI fixer integrates with the RL environment:
+- Provides code fixes during agent training
+- Logs complexity vs reward metrics
+- Stores successful patterns in memory
+- Enables curriculum learning with adaptive difficulty
+
+## Supported Models
+
+CodeArena supports various LLM backends for code fixing and inference evaluation:
+
+### TGI (Production)
+- **TinyLlama-1.1B-Chat-v1.0** (default for Spaces)
+- **Qwen2.5-Coder-1.5B** (recommended for local)
+- **CodeLlama-7B-Instruct** (high quality, requires more RAM)
+
+### OpenAI-Compatible (Ollama/vLLM)
+- **codellama:7b-instruct** (Ollama)
+- **codellama:13b-instruct** (Ollama)
+- **qwen2.5-coder:1.5b** (Ollama)
+- **deepseek-coder:6.7b** (Ollama)
+
+### HuggingFace Transformers (Local)
+- **Qwen/Qwen2.5-Coder-1.5B** (fast, good quality)
+- **microsoft/DialoGPT-medium** (experimental)
+- **TinyLlama/TinyLlama-1.1B-Chat-v1.0** (lightweight)
+
+### Model Performance Comparison
+| Model | Size | Speed | Quality | Memory |
+|-------|------|-------|---------|--------|
+| TinyLlama-1.1B | 1.1B | Fast | Good | 2GB |
+| Qwen2.5-Coder-1.5B | 1.5B | Fast | Excellent | 3GB |
+| CodeLlama-7B | 7B | Medium | Excellent | 14GB |
+| CodeLlama-13B | 13B | Slow | Best | 26GB |
 
 ## Usage
 

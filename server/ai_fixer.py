@@ -1,7 +1,7 @@
 """
 CodeArena Built-in AI Code Fixer
-Works WITHOUT Ollama. Uses AST analysis + pattern-based repair.
-Also supports Ollama if available (graceful fallback).
+Uses AST analysis + pattern-based repair + TGI LLM integration.
+Supports TGI (Text Generation Inference) for advanced code fixing.
 """
 
 import ast
@@ -9,12 +9,76 @@ import re
 import textwrap
 import subprocess
 import sys
+import os
 from typing import Optional
+import httpx
 from server.algorithm_detector import (
     detect_problem_type, detect_complexity, needs_optimization,
     get_optimization_hint, build_adaptive_prompt_suffix, ALGO_HINTS
 )
 from server.memory import store_success, retrieve_memory, log_complexity_reward
+
+
+# TGI Configuration
+TGI_BASE_URL = os.environ.get("TGI_BASE_URL", "http://localhost:8080")
+TGI_AVAILABLE = False
+
+def check_tgi_availability():
+    """Check if TGI server is available."""
+    global TGI_AVAILABLE
+    try:
+        response = httpx.get(f"{TGI_BASE_URL}/health", timeout=5.0)
+        TGI_AVAILABLE = response.status_code == 200
+    except:
+        TGI_AVAILABLE = False
+    return TGI_AVAILABLE
+
+
+def fix_with_tgi(code: str) -> Optional[str]:
+    """Use TGI for advanced code fixing."""
+    if not TGI_AVAILABLE and not check_tgi_availability():
+        return None
+
+    prompt = f"""You are an expert competitive programmer.
+
+Fix the following Python code:
+- Remove syntax errors
+- Ensure correct logic
+- Optimize to O(n) if possible
+
+Code:
+{code}
+
+Return ONLY the corrected code without any explanation:
+"""
+
+    try:
+        response = httpx.post(
+            f"{TGI_BASE_URL}/v1/chat/completions",
+            json={
+                "model": "tgi",
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 500,
+                "temperature": 0.3
+            },
+            timeout=30.0
+        )
+        response.raise_for_status()
+        result = response.json()
+        fixed_code = result["choices"][0]["message"]["content"].strip()
+
+        # Clean up the response
+        if "Return ONLY the corrected code" in fixed_code:
+            fixed_code = fixed_code.split("Return ONLY the corrected code")[-1].strip()
+
+        return fixed_code if fixed_code else None
+
+    except Exception as e:
+        print(f"TGI fix error: {e}", file=sys.stderr)
+        return None
+
+
+# ─── Pattern-Based Fixes ─────────────────────────────────────────────────────
 
 
 # ─── Pattern-Based Fixes ─────────────────────────────────────────────────────
@@ -403,33 +467,31 @@ Output ONLY the O(n) optimized version inside a ```python ... ``` block. No expl
 def generate_fix(
     code: str,
     error_log: str = "",
-    ollama_url: str = "http://localhost:11434",
-    model: str = "llama3.2:latest",
-    use_ollama: bool = True,
+    tgi_url: str = TGI_BASE_URL,
+    use_tgi: bool = True,
     reward: float = 0.0,
     task_id: str = "",
 ) -> dict:
     """
     Main entry point for code fixing.
-    Full pipeline: Algorithm Detection + Memory → Ollama (Analysis→Optimization→Code + Self-Critique) → built-in fallback
+    Full pipeline: Algorithm Detection + Memory → TGI (Analysis→Optimization→Code + Self-Critique) → built-in fallback
     Logs complexity vs reward to CSV for research tracking.
     Returns: { fixed_code, method, success, explanation }
     """
-    if use_ollama:
-        result = fix_with_ollama(code, error_log, ollama_url, model, reward=reward, task_id=task_id)
-        if result:
-            fixed_code, explanation = result
+    if use_tgi:
+        fixed_code = fix_with_tgi(code)
+        if fixed_code:
             # Log complexity vs reward for research tracking
             complexity = detect_complexity(fixed_code)
-            log_complexity_reward(task_id or "sandbox", reward, complexity, step=0, method="ollama")
+            log_complexity_reward(task_id or "sandbox", reward, complexity, step=0, method="tgi")
             # Store in memory if good reward
             if reward >= 0.8 and task_id:
                 store_success(task_id, fixed_code, reward)
             return {
                 "fixed_code": fixed_code,
-                "method": "ollama",
+                "method": "tgi",
                 "success": True,
-                "explanation": explanation,
+                "explanation": "Fixed using TGI LLM",
                 "complexity": complexity,
                 "algo_hint": get_optimization_hint(fixed_code, error_log),
             }
@@ -442,8 +504,8 @@ def generate_fix(
         "fixed_code": fixed_code,
         "method": "builtin",
         "success": True,
-        "explanation": "Ollama unavailable. Used built-in pattern-based fixer.",
-        "note": "Ollama unavailable. Used built-in pattern-based fixer.",
+        "explanation": "TGI unavailable. Used built-in pattern-based fixer.",
+        "note": "TGI unavailable. Used built-in pattern-based fixer.",
         "complexity": complexity,
         "algo_hint": get_optimization_hint(fixed_code),
     }
