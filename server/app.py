@@ -10,7 +10,10 @@ from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import os
 
 from server.models import CodeArenaObservation, CodeArenaAction, TaskInfo
 from server.executor import run_code_with_tests
@@ -352,6 +355,19 @@ def api_memory():
     except Exception:
         return {"memories": {}}
 
+
+# ── Static Frontend Serving ───────────────────────────────────────────────
+dist_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+
+if os.path.exists(dist_path):
+    app.mount("/assets", StaticFiles(directory=os.path.join(dist_path, "assets")), name="assets")
+    
+    @app.get("/{full_path:path}")
+    def serve_frontend(full_path: str):
+        path_in_dist = os.path.join(dist_path, full_path)
+        if os.path.isfile(path_in_dist):
+            return FileResponse(path_in_dist)
+        return FileResponse(os.path.join(dist_path, "index.html"))
 
 # ── CLI entrypoint (OpenEnv / script console_scripts) ─────────────────────
 def main():
