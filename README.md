@@ -11,7 +11,7 @@ pinned: true
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/havinashpatil/meta/blob/main/train_grpo.ipynb)
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-v0.2%2B%20Compatible-blue)](./openenv.yaml)
 [![Theme](https://img.shields.io/badge/Theme%20%234-Self--Improvement-purple)]()
-[![Blog](https://img.shields.io/badge/📝%20Blog-Read%20Writeup-orange)](./BLOG.md)
+[![Blog](https://img.shields.io/badge/📝%20Blog-Read%20Writeup-orange)](https://huggingface.co/spaces/ceoavinash/codearena-rl/discussions/1)
 
 # 🚀 CodeArena: Iterative Code Repair as an RL Environment
 
@@ -228,7 +228,7 @@ Features:
 |---|---|
 | **🤗 HuggingFace Space (Live)** | [huggingface.co/spaces/ceoavinash/codearena-rl](https://huggingface.co/spaces/ceoavinash/codearena-rl) |
 | **📓 Training Notebook (Colab)** | [Open in Colab](https://colab.research.google.com/github/havinashpatil/meta/blob/main/train_grpo.ipynb) |
-| **📝 Blog / Writeup** | [BLOG.md](./BLOG.md) |
+| **📝 Blog / Writeup** | [Read on HuggingFace](https://huggingface.co/spaces/ceoavinash/codearena-rl/discussions/1) |
 | **💻 GitHub Repository** | [github.com/havinashpatil/meta](https://github.com/havinashpatil/meta) |
 | **📋 OpenEnv Manifest** | [openenv.yaml](./openenv.yaml) |
 
