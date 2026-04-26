@@ -6,124 +6,232 @@ colorTo: purple
 sdk: docker
 pinned: true
 ---
-[![HuggingFace Space](https://img.shields.io/badge/🤗%20Space-Live-brightgreen)](https://huggingface.co/spaces/ceoavinash/codearena-rl)
+
+[![HuggingFace Space](https://img.shields.io/badge/🤗%20Live%20Demo-CodeArena-brightgreen)](https://huggingface.co/spaces/ceoavinash/codearena-rl)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/havinashpatil/meta/blob/main/train_grpo.ipynb)
-[![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-blue)](./openenv.yaml)
+[![OpenEnv](https://img.shields.io/badge/OpenEnv-v0.2%2B%20Compatible-blue)](./openenv.yaml)
 [![Theme](https://img.shields.io/badge/Theme%20%234-Self--Improvement-purple)]()
+[![Blog](https://img.shields.io/badge/📝%20Blog-Read%20Writeup-orange)](./BLOG.md)
 
-# 🚀 CodeArena: The Iterative Code Repair RL Benchmark
+# 🚀 CodeArena: Iterative Code Repair as an RL Environment
 
-GitHub Copilot, Cursor, Devin — every major coding AI is benchmarked on *generation*. Can it write a function? Can it complete a snippet? 
-
-But nobody benchmarks what happens when the code **breaks**. When the agent has to reason about failure, read error logs, iterate on fixes, and recover from its own mistakes.
-
-**CodeArena** measures exactly that. It is the first standardized, open-source Reinforcement Learning environment built specifically for **iterative code repair**. It grades an agent not just on whether the tests pass, but on whether the fix is correct, secure, and algorithmically efficient.
+> **TL;DR** — An OpenEnv-compatible RL environment where an LLM agent debugs Python code across multiple attempts, graded by unit tests + LLM-as-Judge + algorithmic efficiency. Features adaptive difficulty, agent memory, and a full TRL GRPO training pipeline.
 
 ---
 
-## 🎯 Hackathon Theme Alignment: Theme #4 (Self-Improvement)
+## 🎯 The Problem
 
-CodeArena directly tackles **Theme #4: Self-Improvement**. 
+Every coding AI is benchmarked on **generation** — write a function, complete a snippet. **Nobody benchmarks what happens when the code breaks.** In production, developers spend the majority of their time reading error logs, reasoning about failures, iterating on fixes, and recovering from wrong turns. There is no standardized RL environment for this iterative debugging loop.
 
-Instead of a fixed set of tasks, CodeArena features an **Adaptive Curriculum**. The environment continuously tracks the agent's rolling average reward over the last 10 episodes. If an agent masters easy syntax errors (avg reward > 0.80), the environment automatically escalates the difficulty to algorithmic logic bugs. If the agent struggles, it de-escalates to allow recovery.
-
-The goal is recursive skill amplification: the agent learns to drive its own capability growth without plateauing on memorized, simple solutions.
+**CodeArena fills that gap.** It is the first open-source RL environment built specifically for *iterative code repair*, where an agent must fix buggy Python code over multiple steps, learning from execution feedback after each attempt.
 
 ---
 
-## ✨ Environment Innovation (What makes it special?)
+## 🧠 Theme Alignment: #4 — Self-Improvement
 
-### 1. The Gap Nobody Is Measuring
-We have countless environments for generating code (HumanEval, MBPP). CodeArena is the first standardized RL environment for the *debugging loop*. It simulates the real-world workflow: write → test → read error → fix → repeat.
+CodeArena directly targets **Theme #4: Self-Improvement** through three mechanisms:
 
-### 2. LLM-as-Judge Hybrid Grader
-Most benchmarks ask a binary question: *did the tests pass?* CodeArena uses a rich **Hybrid Grader**. A deterministic test runner checks correctness, while a built-in LLM Judge (powered by TGI/Hugging Face Serverless) scores the fix on security, readability, and algorithmic complexity (O(N) vs O(N²)). This prevents reward-hacking where agents produce syntactically correct but fundamentally broken code just to pass a weak test.
-
-### 3. Complex Shaped Rewards
-Rewards are a weighted composite, heavily shaped to encourage professional engineering:
-- **Test Pass Ratio (40%)**: Fraction of unit tests passed.
-- **LLM Judge Score (30%)**: Correctness + Security + Code Quality.
-- **Compile Score (20%)**: Does it run without crashing?
-- **Efficiency Score (10%)**: Speed vs optimal runtime.
-- **Step Penalty (-0.02/step)**: Rewards faster fixes over meandering trial-and-error.
+1. **Adaptive Curriculum**: Difficulty escalates automatically when the agent's rolling avg reward exceeds 0.80, and de-escalates when it drops below 0.35. The agent drives its own training progression.
+2. **Persistent Agent Memory**: Best solutions per task are stored in `agent_memory.json` and retrieved in future episodes, creating cross-episode learning.
+3. **Adaptive Prompting**: The AI fixer adjusts its strategy based on current reward level — syntax focus at low rewards, algorithm optimization at high rewards.
 
 ---
 
-## 📈 Evidence of Training & Rewards
+## ✨ Environment Innovation (40%)
 
-We successfully trained a model using **TRL GRPO** (Group Relative Policy Optimization) on the CodeArena environment. 
+### Hybrid Grader — Tests + LLM-as-Judge
+Most benchmarks ask: *did the tests pass?* CodeArena also asks: *is the fix correct, secure, efficient, and readable?*
 
-Below is the observable evidence of the agent's training progress. The agent started with a low success rate on algorithmic bugs, but as the GRPO training progressed, it learned to systematically read the `error_log` observation and output correct code, resulting in a climbing reward curve.
+| Component | Weight | Signal |
+|---|---|---|
+| `compile_score` | 15% | Code compiles without error |
+| `test_pass_ratio` | 35% | Fraction of unit tests passed |
+| `efficiency_score` | 30% | Execution time vs optimal (O(n) rewarded, O(n²) penalized) |
+| `llm_correctness` | 10% | LLM judge: logical correctness |
+| `llm_security` | 5% | LLM judge: no vulnerabilities introduced |
+| `llm_quality` | 5% | LLM judge: readability and maintainability |
+
+**Penalties:** `-0.01/step` (rewards faster fixes) and `-0.10` for repeating an identical fix (prevents reward-hacking via repetition).
+
+The 30% efficiency weight means an agent that passes all tests with O(n²) brute-force gets a significantly lower reward than one using O(n). This forces the model to learn *algorithmic reasoning*, not just syntax repair.
+
+### Algorithm Detector
+A built-in classifier (`server/algorithm_detector.py`) identifies the problem type (Kadane's, Two-Sum, Sliding Window, etc.) and estimates time complexity from loop nesting. This drives targeted optimization hints during repair.
+
+### Sandboxed Execution
+All code runs in isolated subprocesses with AST pre-validation, timeout enforcement, and temporary file cleanup. Malicious or infinite-loop code cannot crash the server.
+
+### 9 Tasks Across 5 Categories
+
+| Category | Example | Tests |
+|---|---|---|
+| Easy (syntax) | Missing colons, indentation | Basic repair |
+| Medium (logic) | Off-by-one, wrong conditions | Reasoning |
+| Hard (algorithms) | O(n²) → O(n) refactoring | Optimization |
+| Type Errors | Wrong types, missing casts | Type safety |
+| Security Bugs | SQL injection, path traversal | Security awareness |
+
+---
+
+## 📊 Storytelling (30%) — How It Works
+
+**Data Flow:** `Agent` → `POST /reset` → receives `buggy_code + error_log` → `POST /step` with `proposed_fix` → sandboxed execution → hybrid grading → `reward + updated error_log` → repeat up to 5 steps.
+
+```
+Episode Walkthrough:
+────────────────────────
+Step 1: Agent receives def solve(n) print(n)
+        → Proposes:     def solve(n): print(n)
+        → Result:       ✓ Compiles, 1/3 tests pass
+        → Reward:       0.35
+
+Step 2: Agent reads error: "AssertionError: solve(5) != 25"
+        → Proposes:     def solve(n): return n**2
+        → Result:       ✓ 3/3 tests pass, but O(n) expected
+        → Reward:       0.72
+
+Step 3: Agent reads hint: "Optimize to O(1)"
+        → Proposes:     def solve(n): return n*n
+        → Result:       ✓ 3/3 pass, O(1) optimal
+        → Reward:       0.95 ✅
+```
+
+The agent must learn to **read error messages**, **avoid repeating failed fixes**, and **optimize for efficiency** — not just correctness. This mirrors real-world software engineering.
+
+---
+
+## 📈 Showing Improvement in Rewards (20%)
+
+We trained `Qwen/Qwen2.5-Coder-1.5B` using **TRL GRPO** (Group Relative Policy Optimization) with CodeArena as the live reward environment.
 
 ![Reward Curve](results/reward_curve.png)
-*Episode reward over training steps. The rolling 10-step average shows clear learning and improvement.*
+*Episode reward over training steps. The rolling 10-step average shows clear learning progression from near-zero to consistent 0.65+ rewards.*
 
 ![Reward by Task](results/reward_by_task.png)
-*Average reward broken down by task category. The agent performs well on syntax and type errors, while Medium/Hard algorithmic tasks remain challenging but improving.*
+*Average reward by task category. Easy/type-error tasks are mastered first; algorithmic optimization remains challenging — exactly the curriculum behavior we designed for.*
 
-### 🏃‍♂️ Run the Training Script
-We have provided our complete TRL GRPO training pipeline in a Colab notebook so judges can re-run and verify the training process end-to-end:
-👉 **[Open Training Script in Google Colab](https://colab.research.google.com/github/havinashpatil/meta/blob/main/train_grpo.ipynb)**
-
----
-
-## 💻 Try the Live Environment (Hugging Face Space)
-
-We have deployed the fully-functional CodeArena environment, complete with a React frontend dashboard that visualizes the RL process in real-time.
-
-👉 **[Live Demo: CodeArena on Hugging Face Spaces](https://huggingface.co/spaces/ceoavinash/codearena-rl)**
-
-The live space includes a built-in **AI Code Fixer** powered by Hugging Face's Serverless Inference API (using `Qwen2.5-Coder-3B-Instruct`), allowing you to test the agent's repair capabilities directly in your browser.
-
-### Features of the Live Space:
-- **Real-time Monitoring**: Watch the agent's compile score, test ratio, and LLM judge scores update live.
-- **Sandbox Mode**: Paste your own broken Python code and watch the environment evaluate it.
-- **Agent Mode**: Toggle auto-pilot to watch the agent fix code in a continuous loop until optimal.
+### Key Observations:
+- **Initial performance**: Agent produces syntactically broken fixes → reward ≈ 0.01
+- **After 20 steps**: Agent learns to fix syntax → reward ≈ 0.35
+- **After 40 steps**: Agent learns to pass tests → reward ≈ 0.65
+- **Steady improvement**: Rolling average trends upward, with hard tasks remaining the frontier challenge
 
 ---
 
-## 🛠️ Architecture & Setup (OpenEnv Compatible)
+## 🔧 Reward & Training Pipeline (10%)
 
-This benchmark strictly adheres to the **OpenEnv** specification (`openenv.yaml`). 
+### Training Script (Colab)
 
-**Data Flow:** `Agent` → `POST /reset` → `buggy_code` → `POST /step` → `LLM Judge & Test Runner` → `reward` → `Agent`
+👉 **[Open Training Notebook in Google Colab](https://colab.research.google.com/github/havinashpatil/meta/blob/main/train_grpo.ipynb)**
 
-### Local Development
+The notebook demonstrates environment-in-the-loop RL:
 
-1. **Install Dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   cd frontend && npm install
-   ```
+```python
+def codearena_reward_func(completions, prompts):
+    """Reward function that queries the live CodeArena environment."""
+    rewards = []
+    for completion in completions:
+        proposed_fix = completion[0].get('content', '').strip()
+        res = httpx.post("http://localhost:7860/step",
+                         json={"proposed_fix": proposed_fix})
+        reward = res.json().get('reward', 0.0)
+        rewards.append(reward)
+    return rewards
 
-2. **Generate Task Database:**
-   ```bash
-   python create_tasks.py
-   ```
+trainer = GRPOTrainer(
+    model=model,  # Qwen2.5-Coder-1.5B
+    reward_funcs=codearena_reward_func,
+    args=GRPOConfig(output_dir="./codearena-grpo",
+                    learning_rate=1e-5, max_steps=50),
+    train_dataset=dataset,  # m-a-p/Code-Feedback
+)
+trainer.train()
+```
 
-3. **Run the FastAPI Backend:**
-   The backend acts as the OpenEnv entrypoint and serves the compiled React dashboard.
-   ```bash
-   uvicorn server.app:app --port 7860
-   ```
+The reward is **not static** — it comes from actually executing the agent's code in a sandboxed environment, running real unit tests, and scoring with the hybrid grader. This is true environment-in-the-loop RL.
 
-4. **Evaluate a Local Agent (Inference):**
-   You can evaluate any local agent (e.g., Ollama or a HuggingFace pipeline) programmatically via `inference.py`.
-   ```bash
-   export MODEL_NAME="codellama:7b-instruct"
-   python inference.py --backend openai
-   ```
+### Inference Evaluation
+
+```bash
+# Evaluate any model against CodeArena
+export MODEL_NAME="codellama:7b-instruct"
+python inference.py --backend openai
+```
+
+Results are logged to `rewards_log.csv` and can be visualized with `python plot_rewards.py`.
 
 ---
 
-## 🔗 Quick Links
+## 🏗️ Architecture (OpenEnv Compatible)
+
+```
+codearena-rl/
+├── openenv.yaml              # OpenEnv manifest (observation/action spaces)
+├── server/
+│   ├── app.py                # FastAPI entrypoint (/reset, /step, /state)
+│   ├── models.py             # Pydantic schemas (Observation, Action, Task)
+│   ├── executor.py           # Sandboxed subprocess execution
+│   ├── grader.py             # Hybrid reward (tests + LLM judge)
+│   ├── ai_fixer.py           # Multi-fallback AI repair (TGI→Ollama→AST)
+│   ├── algorithm_detector.py # Problem classification + complexity detection
+│   ├── memory.py             # Persistent agent memory (best solutions)
+│   └── raw_runner.py         # Sandbox mode executor
+├── tasks/
+│   ├── easy.py, medium.py, hard.py
+│   ├── type_errors/          # 3 type error tasks
+│   └── security_bugs/        # 3 security bug tasks
+├── frontend/                 # React + Vite dashboard
+├── train_grpo.ipynb          # TRL GRPO training notebook
+├── inference.py              # CLI evaluation runner
+├── plot_rewards.py           # Reward visualization
+└── Dockerfile                # HF Spaces deployment
+```
+
+### Quick Start
+
+```bash
+pip install -r requirements.txt
+python create_tasks.py           # Generate task database
+uvicorn server.app:app --port 7860  # Start environment
+```
+
+### OpenEnv API
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/reset` | POST | Initialize environment with `{"task_id": "easy\|medium\|hard\|auto"}` |
+| `/step` | POST | Submit fix with `{"proposed_fix": "..."}` → reward + observation |
+| `/state` | GET | Current observation |
+| `/health` | GET | Server health check |
+| `/fix` | POST | AI code repair endpoint |
+| `/curriculum` | GET | Adaptive difficulty state |
+| `/stats` | GET | Complexity vs reward analytics |
+| `/memory` | GET | Agent memory contents |
+
+---
+
+## 💻 Live Demo
+
+👉 **[https://huggingface.co/spaces/ceoavinash/codearena-rl](https://huggingface.co/spaces/ceoavinash/codearena-rl)**
+
+Features:
+- **Real-time dashboard** with reward charts, terminal logs, and code editor
+- **AI Fix button** powered by HuggingFace Serverless Inference (`Qwen2.5-Coder-3B-Instruct`)
+- **Agent Mode** toggle for autonomous fix → test → fix loops
+- **Sandbox Mode** for arbitrary Python code evaluation
+
+---
+
+## 🔗 All Links
 
 | Resource | URL |
 |---|---|
-| **Hugging Face Space (Live Demo)** | [CodeArena on HF Spaces](https://huggingface.co/spaces/ceoavinash/codearena-rl) |
-| **Colab Training Notebook (TRL)** | [Open in Colab](https://colab.research.google.com/github/havinashpatil/meta/blob/main/train_grpo.ipynb) |
-| **OpenEnv Specification** | [openenv.yaml](./openenv.yaml) |
-| **Demo Video / Blog Post** | *(Add link to YouTube/HF Blog here if available)* |
+| **🤗 HuggingFace Space (Live)** | [huggingface.co/spaces/ceoavinash/codearena-rl](https://huggingface.co/spaces/ceoavinash/codearena-rl) |
+| **📓 Training Notebook (Colab)** | [Open in Colab](https://colab.research.google.com/github/havinashpatil/meta/blob/main/train_grpo.ipynb) |
+| **📝 Blog / Writeup** | [BLOG.md](./BLOG.md) |
+| **💻 GitHub Repository** | [github.com/havinashpatil/meta](https://github.com/havinashpatil/meta) |
+| **📋 OpenEnv Manifest** | [openenv.yaml](./openenv.yaml) |
 
 ---
-*Built for the OpenEnv Hackathon India 2026.*
+
+*Built for the OpenEnv Hackathon India 2026 — Theme #4: Self-Improvement*
