@@ -32,5 +32,5 @@ RUN mkdir -p /.triton && chmod 777 /.triton
 EXPOSE 7860
 EXPOSE 8080
 
-# Start both FastAPI server and TGI in background
-CMD ["sh", "-c", "text-generation-inference --model-id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --port 8080 --hostname 0.0.0.0 & uvicorn server.app:app --host 0.0.0.0 --port 7860"]
+# Override the TGI base image entrypoint and start both TGI + FastAPI
+ENTRYPOINT ["/bin/sh", "-c", "text-generation-inference --model-id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --port 8080 --hostname 0.0.0.0 & uvicorn server.app:app --host 0.0.0.0 --port 7860"]
