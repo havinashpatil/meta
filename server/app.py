@@ -256,19 +256,23 @@ class FixRequest(BaseModel):
     error_log: Optional[str] = ""
     tgi_url: Optional[str] = "http://localhost:8080"
     use_tgi: Optional[bool] = True
+    ollama_url: Optional[str] = "http://localhost:11434"
+    use_ollama: Optional[bool] = True
     reward: Optional[float] = 0.0
     task_id: Optional[str] = ""
 
 
 @app.post("/fix")
 def api_fix(body: FixRequest):
-    """Generate a code fix using TGI (if available) or built-in pattern fixer."""
+    """Generate a code fix using TGI/HF API, Ollama, or built-in pattern fixer."""
     try:
         result = generate_fix(
             code=body.code,
             error_log=body.error_log or "",
             tgi_url=body.tgi_url,
             use_tgi=body.use_tgi,
+            ollama_url=body.ollama_url,
+            use_ollama=body.use_ollama,
             reward=body.reward or 0.0,
             task_id=body.task_id or "",
         )

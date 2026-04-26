@@ -524,32 +524,49 @@ def generate_fix(
     error_log: str = "",
     tgi_url: str = TGI_BASE_URL,
     use_tgi: bool = True,
+    ollama_url: str = "http://localhost:11434",
+    use_ollama: bool = True,
     reward: float = 0.0,
     task_id: str = "",
 ) -> dict:
     """
     Main entry point for code fixing.
-    Full pipeline: Algorithm Detection + Memory → TGI (Analysis→Optimization→Code + Self-Critique) → built-in fallback
-    Logs complexity vs reward to CSV for research tracking.
-    Returns: { fixed_code, method, success, explanation }
+    Full pipeline: Algorithm Detection + Memory → TGI/HF → Ollama → built-in fallback
     """
+    fixed_code = None
     if use_tgi:
         fixed_code = fix_with_tgi(code, tgi_url=tgi_url, error_log=error_log)
         if fixed_code and validate_code(fixed_code):
-            # Log complexity vs reward for research tracking
             complexity = detect_complexity(fixed_code)
-            log_complexity_reward(task_id or "sandbox", reward, complexity, step=0, method="tgi")
-            # Store in memory if good reward
+            log_complexity_reward(task_id or "sandbox", reward, complexity, step=0, method="tgi/hf")
             if reward >= 0.8 and task_id:
                 store_success(task_id, fixed_code, reward)
             return {
                 "fixed_code": fixed_code,
                 "method": "tgi",
                 "success": True,
-                "explanation": "Fixed using TGI LLM",
+                "explanation": "Fixed using TGI/HF Inference API",
                 "complexity": complexity,
                 "algo_hint": get_optimization_hint(fixed_code, error_log),
             }
+
+    if use_ollama and is_ollama_available(ollama_url=ollama_url):
+        ollama_result = fix_with_ollama(code, error_log=error_log, ollama_url=ollama_url, reward=reward, task_id=task_id)
+        if ollama_result:
+            fixed_code, explanation = ollama_result
+            if fixed_code and validate_code(fixed_code):
+                complexity = detect_complexity(fixed_code)
+                log_complexity_reward(task_id or "sandbox", reward, complexity, step=0, method="ollama")
+                if reward >= 0.8 and task_id:
+                    store_success(task_id, fixed_code, reward)
+                return {
+                    "fixed_code": fixed_code,
+                    "method": "ollama",
+                    "success": True,
+                    "explanation": explanation or "Fixed using local Ollama model",
+                    "complexity": complexity,
+                    "algo_hint": get_optimization_hint(fixed_code, error_log),
+                }
 
     # Fallback: built-in AST pattern fixer
     fixed_code = apply_all_fixes(code)
