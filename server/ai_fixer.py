@@ -83,18 +83,56 @@ Return ONLY the corrected code without any explanation:
 
 # ─── Pattern-Based Fixes ─────────────────────────────────────────────────────
 
+def _split_header_body(line: str) -> tuple[str, str]:
+    """Split a header line into the statement header and inline body.
+
+    Example:
+      def foo() print('x')
+      if x print(x)
+    becomes:
+      ('def foo()', "print('x')")
+    """
+    stripped = line.rstrip()
+    # Match function or class headers with inline bodies.
+    inline_match = re.match(
+        r'^(\s*(?:def|class)\s+[A-Za-z_]\w*(?:\([^)]*\))?)(?:\s+(.+))?$',
+        stripped,
+    )
+    if inline_match and inline_match.group(2):
+        return inline_match.group(1), inline_match.group(2)
+
+    # Match conditional and loop headers with inline bodies.
+    inline_match = re.match(
+        r'^(\s*(?:if|elif|else|for|while|try|except|finally)\b[^:]*?)(?:\s+(.+))?$',
+        stripped,
+    )
+    if inline_match and inline_match.group(2):
+        return inline_match.group(1), inline_match.group(2)
+
+    return stripped, ""
+
+
 def fix_syntax_errors(code: str) -> str:
     """Try to auto-fix common syntax errors."""
     lines = code.split('\n')
-    fixed = []
+    fixed_lines: list[str] = []
     for line in lines:
-        # Fix missing colon on def/class/if/for/while/else/elif/try/except/finally
         stripped = line.rstrip()
         if re.match(r'^\s*(def |class |if |elif |else|for |while |try|except|finally)', stripped):
-            if not stripped.endswith(':') and not stripped.endswith('\\') and not stripped.endswith(','):
-                stripped = stripped + ':'
-        fixed.append(stripped)
-    return '\n'.join(fixed)
+            if stripped.endswith(':') or stripped.endswith('\\') or stripped.endswith(','):
+                fixed_lines.append(stripped)
+                continue
+
+            header, inline_body = _split_header_body(stripped)
+            if inline_body:
+                indent = re.match(r'^(\s*)', line).group(1)
+                fixed_lines.append(f"{header}:")
+                fixed_lines.append(indent + '    ' + inline_body.strip())
+            else:
+                fixed_lines.append(stripped + ':')
+        else:
+            fixed_lines.append(stripped)
+    return '\n'.join(fixed_lines)
 
 
 def fix_wrong_builtins(code: str) -> str:
@@ -480,7 +518,7 @@ def generate_fix(
     """
     if use_tgi:
         fixed_code = fix_with_tgi(code, tgi_url=tgi_url)
-        if fixed_code:
+        if fixed_code and validate_code(fixed_code):
             # Log complexity vs reward for research tracking
             complexity = detect_complexity(fixed_code)
             log_complexity_reward(task_id or "sandbox", reward, complexity, step=0, method="tgi")
@@ -498,6 +536,22 @@ def generate_fix(
 
     # Fallback: built-in AST pattern fixer
     fixed_code = apply_all_fixes(code)
+    if not validate_code(fixed_code):
+        # try a second pass with a stricter syntax fixer
+        fallback_code = fix_syntax_errors(code)
+        if validate_code(fallback_code):
+            fixed_code = fallback_code
+        else:
+            return {
+                "fixed_code": code,
+                "method": "builtin",
+                "success": False,
+                "explanation": "Builtin fixer could not produce valid Python code.",
+                "error": "Syntax fix failed; please inspect source code manually.",
+                "complexity": detect_complexity(code),
+                "algo_hint": get_optimization_hint(code),
+            }
+
     complexity = detect_complexity(fixed_code)
     log_complexity_reward(task_id or "sandbox", reward, complexity, step=0, method="builtin")
     return {
