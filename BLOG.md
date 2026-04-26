@@ -198,6 +198,12 @@ We trained `Qwen/Qwen2.5-Coder-1.5B` on the `m-a-p/Code-Feedback` dataset with C
 ![Fig 5: Fixer Method Boxplot](results/method_boxplot.png)
 *Fig 5: Reward Distribution by Fixer Method, comparing the performance of the Ollama LLM to the built-in pattern-based fixer.*
 
+![Fig 6: Cumulative Reward](results/cumulative_reward.png)
+*Fig 6: Cumulative Reward over time, highlighting the total accumulated reward across multiple episodes.*
+
+![Fig 7: Method Performance Comparison](results/method_performance.png)
+*Fig 7: LLM Fixer Method Performance Comparison scatter plot showing the individual performance data points of Ollama vs Builtin methods.*
+
 ### Reproducing the Training
 
 The complete training pipeline is available as a Colab notebook:
