@@ -1,3 +1,11 @@
+---
+title: CodeArena RL Agent
+emoji: ??
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+---
 [![HuggingFace Space](https://img.shields.io/badge/🤗%20Space-Live-brightgreen)](HF_SPACE_URL)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](COLAB_URL)
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-blue)](./openenv.yaml)
@@ -176,3 +184,4 @@ This benchmark strictly adheres to the OpenEnv specification. See `openenv.yaml`
 | HuggingFace Blog Post | [Read on HF](HF_BLOG_URL) |
 | Demo Video (< 2 min) | [Watch on YouTube](YOUTUBE_URL) |
 | OpenEnv Spec | [openenv.yaml](./openenv.yaml) |
+
